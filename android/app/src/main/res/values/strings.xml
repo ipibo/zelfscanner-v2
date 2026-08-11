@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">ZelfscannerV2</string>
+    <string name="cradle_a11y_desc">Lets Zelfscanner unlock the cradle on devices where the unlock broadcast is system-only (e.g. PS20 / Android 10) by tapping Unlock in CradleUtility for you.</string>
+</resources>

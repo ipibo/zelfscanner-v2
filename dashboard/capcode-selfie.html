@@ -1,0 +1,58 @@
+<!doctype html>
+<!--
+  CapCode SELFIE mask — Pattern 9, empty box (the "box is optional" trick from
+  Signature_Capture_code.pdf §2.1). Two identical Pattern-9 strips with a big
+  WINDOW between them. Print, cut out the window, hold it in front of your face,
+  arm SCANNER EYE, pull the PS20J trigger. The imager captures whatever is in the
+  window (your face) as the signature box region.
+
+  Pattern 9 bar widths in X: B3 S1 B1 S1 B1 S1 B1. X = 3mm (resolves at ~20cm).
+  Strip = 9X = 27mm. Window = 90mm. Bars span full strip height.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4 landscape; margin: 12mm; }
+  html,body{margin:0;background:#fff;font:13px/1.4 sans-serif;color:#222}
+  .sheet{display:flex;flex-direction:column;align-items:center;padding:10mm}
+  h1{font-size:16px;margin:0 0 2mm}
+  p{margin:0 0 6mm;color:#666}
+  .card{position:relative}
+  .cut{position:absolute;top:0;bottom:0;border:1.5px dashed #c00;pointer-events:none}
+  .scissors{position:absolute;top:-7mm;font-size:14px;color:#c00}
+  .note{margin-top:6mm;color:#999;font-size:11px}
+  @media print { .screenonly{display:none} }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1 class="screenonly">Scanner-selfie mask · Zebra CapCode Pattern 9</h1>
+  <p class="screenonly">Print A4 landscape. Cut along the red dashed lines to open the window. Hold over your face, point the PS20J imager, pull the trigger.</p>
+
+  <div class="card">
+    <!-- 144mm wide, 110mm tall. Left strip 0-27, window 27-117, right strip 117-144. -->
+    <svg width="144mm" height="110mm" viewBox="0 0 144 110" xmlns="http://www.w3.org/2000/svg">
+      <rect width="144" height="110" fill="#fff"/>
+      <g fill="#000">
+        <!-- LEFT Pattern 9: bars at 0-9, 12-15, 18-21, 24-27 -->
+        <rect x="0"   y="0" width="9" height="110"/>
+        <rect x="12"  y="0" width="3" height="110"/>
+        <rect x="18"  y="0" width="3" height="110"/>
+        <rect x="24"  y="0" width="3" height="110"/>
+        <!-- RIGHT Pattern 9 (offset +117): 117-126, 129-132, 135-138, 141-144 -->
+        <rect x="117" y="0" width="9" height="110"/>
+        <rect x="129" y="0" width="3" height="110"/>
+        <rect x="135" y="0" width="3" height="110"/>
+        <rect x="141" y="0" width="3" height="110"/>
+      </g>
+    </svg>
+    <!-- cut guides for the window (just inside the strips: 30mm and 114mm) -->
+    <div class="cut" style="left:30mm"><span class="scissors">✂</span></div>
+    <div class="cut" style="left:114mm"></div>
+  </div>
+
+  <div class="note">Window ≈ 84 × 110 mm. If capture is empty, hold steady ~20 cm, more light, fill the window with your face.</div>
+</div>
+</body>
+</html>

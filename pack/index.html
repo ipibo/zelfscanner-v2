@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: #000; height: 100%; overflow: hidden; }
+  video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+  #error {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(200, 0, 0, 0.85); color: #fff; font: bold 8vw sans-serif; text-align: center;
+  }
+  #error.show { display: flex; }
+  #debug {
+    position: absolute; bottom: 8px; left: 8px; color: #7CFC00; font: 12px monospace; opacity: 0.85;
+  }
+</style>
+</head>
+<body>
+  <video id="player" autoplay loop muted playsinline></video>
+  <div id="error"></div>
+  <div id="debug">loading pack…</div>
+  <script>
+    // <script src="runtime.js"> does NOT load on this WebView (Android 5.1 /
+    // Chromium 46: local <script src> sub-resource loads are blocked, even
+    // with allowFileAccess on). XHR to local files DOES work here, so we
+    // fetch the runtime's source as text and eval it instead. Confirmed by
+    // hand on-device 2026-08-06 — don't revert to <script src>.
+    (function () {
+      var debugEl = document.getElementById('debug');
+      try {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', 'runtime.js', false);
+        // file:// responses carry no Content-Type, so force UTF-8 rather than
+        // let the WebView guess -- defensive, for whenever this source has
+        // non-ASCII text again. (The actual eval SyntaxError hit on-device
+        // 2026-08-06 turned out to be unrelated: a trailing comma in a
+        // function call in runtime.js, ES2017 syntax this old V8 rejects.)
+        xhr.overrideMimeType('text/plain; charset=utf-8');
+        xhr.send();
+        if (!xhr.responseText) {
+          debugEl.textContent = 'runtime.js leeg of niet gevonden (status ' + xhr.status + ')';
+          return;
+        }
+        (0, eval)(xhr.responseText);
+      } catch (e) {
+        debugEl.textContent = 'runtime.js laden MISLUKT: ' + e.message;
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+    ext {
+        buildToolsVersion = "33.0.0"
+        minSdkVersion = 21
+        compileSdkVersion = 33
+        targetSdkVersion = 22
+
+        // We use NDK 23 which has both M1 support and is the side-by-side NDK version from AGP.
+        ndkVersion = "23.1.7779620"
+
+        // react-native-webview reads this via safeExtGet('kotlinVersion') to pick its
+        // own kotlin-gradle-plugin version. Must match the stdlib version forced below,
+        // otherwise the compiler (old) chokes reading stdlib classes (new metadata).
+        kotlinVersion = "1.8.10"
+    }
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle")
+        classpath("com.facebook.react:react-native-gradle-plugin")
+    }
+}
+
+// react-native-video 6 (media3) pulls kotlin-stdlib 1.8.10 while RN 0.72 pulls
+// kotlin-stdlib-jdk7/jdk8 1.7.22. In stdlib 1.8+ the jdk7/jdk8 classes were folded
+// into the main artifact, so the two sets collide as duplicate classes. Pin the whole
+// kotlin-stdlib family to one version to resolve it.
+allprojects {
+    configurations.all {
+        resolutionStrategy {
+            force "org.jetbrains.kotlin:kotlin-stdlib:1.8.10"
+            force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.10"
+            force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.10"
+        }
+    }
+}

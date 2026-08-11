@@ -1,0 +1,671 @@
+#!/usr/bin/env bash
+# zsdeploy — push content-pack + app naar meerdere Zebra scanners (MC18N0 / PS20J)
+# over adb/wifi, en zien of elk device echt dezelfde versie draait.
+#
+# Host: macOS (bash 3.2, BSD userland). Enige externe dependency: adb.
+# Device-side shell: toolbox (Android 5.1.1 MC18N0). Geschreven voor de
+# laagste gemene deler zodat het ook werkt op PS20J (Android 10).
+
+set -euo pipefail
+shopt -s nocasematch
+
+# ============================================================
+# CONFIG — pas hier aan, of override via env waar aangegeven
+# ============================================================
+ZS_APP_ID="${ZS_APP_ID:-com.zelfscannerv2}"          # package naam van de app. LEEG = niet gezet, faalt duidelijk waar nodig.
+PACK_DIR_DEFAULT="pack"             # lokale content-pack map (override: push [pack-dir])
+DEVICES_FILE="devices.txt"          # regels: "naam ip"   '#' = comment
+REMOTE_BASE="/sdcard/zelfscanner"
+REMOTE_PACK="$REMOTE_BASE/pack"
+REMOTE_STAGING="$REMOTE_BASE/.staging"
+REMOTE_PACK_OLD="$REMOTE_BASE/.pack_old"
+ADB_PORT=5555
+SCRIPT_NAME="$(basename "$0")"
+
+# ============================================================
+# KLEUR (alleen als stdout een tty is)
+# ============================================================
+if [ -t 1 ]; then
+  C_RED=$'\033[31m'; C_GRN=$'\033[32m'; C_YLW=$'\033[33m'; C_BLU=$'\033[34m'
+  C_BOLD=$'\033[1m'; C_RST=$'\033[0m'
+else
+  C_RED=""; C_GRN=""; C_YLW=""; C_BLU=""; C_BOLD=""; C_RST=""
+fi
+
+info(){ printf '%s\n' "$*"; }
+ok(){ printf '%s[OK]%s %s\n' "$C_GRN" "$C_RST" "$*"; }
+warn(){ printf '%s[WARN]%s %s\n' "$C_YLW" "$C_RST" "$*" >&2; }
+err(){ printf '%s[FAIL]%s %s\n' "$C_RED" "$C_RST" "$*" >&2; }
+
+# ============================================================
+# TEMP + CLEANUP
+# ============================================================
+TMPDIR_ZS="$(mktemp -d "${TMPDIR:-/tmp}/zsdeploy.XXXXXX")"
+cleanup(){ rm -rf "$TMPDIR_ZS"; }
+trap cleanup EXIT INT TERM
+
+sanitize(){ printf '%s' "${1//[:\/]/_}"; }
+
+require_adb(){
+  command -v adb >/dev/null 2>&1 || { err "adb niet gevonden in PATH. Installeer Android platform-tools."; exit 1; }
+}
+
+# ============================================================
+# devices.txt
+# ============================================================
+DEV_NAMES=(); DEV_IPS=()
+load_devices_file(){
+  DEV_NAMES=(); DEV_IPS=()
+  [ -f "$DEVICES_FILE" ] || return 0
+  local line n ip
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      ''|'#'*) continue ;;
+    esac
+    n="$(printf '%s' "$line" | awk '{print $1}')"
+    ip="$(printf '%s' "$line" | awk '{print $2}')"
+    [ -n "$n" ] && [ -n "$ip" ] || continue
+    DEV_NAMES+=("$n"); DEV_IPS+=("$ip")
+  done < "$DEVICES_FILE"
+}
+
+name_for_ip(){
+  local target="$1" i
+  for i in "${!DEV_IPS[@]}"; do
+    [ "${DEV_IPS[$i]}" = "$target" ] && { printf '%s' "${DEV_NAMES[$i]}"; return 0; }
+  done
+  printf '%s' "-"
+}
+
+# ============================================================
+# adb helpers
+# ============================================================
+get_prop(){ adb -s "$1" shell getprop "$2" </dev/null 2>/dev/null | tr -d '\r\n' || true; }
+
+ALL_SERIALS=(); ALL_STATUS=(); OFFLINE_SERIALS=(); UNAUTH_SERIALS=()
+scan_adb_devices(){
+  ALL_SERIALS=(); ALL_STATUS=(); OFFLINE_SERIALS=(); UNAUTH_SERIALS=()
+  local line serial status
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      "List of devices attached"*|'') continue ;;
+    esac
+    serial="$(printf '%s' "$line" | awk '{print $1}')"
+    status="$(printf '%s' "$line" | awk '{print $2}')"
+    [ -n "$serial" ] || continue
+    ALL_SERIALS+=("$serial"); ALL_STATUS+=("$status")
+    case "$status" in
+      offline) OFFLINE_SERIALS+=("$serial") ;;
+      unauthorized) UNAUTH_SERIALS+=("$serial") ;;
+    esac
+  done < <(adb devices </dev/null)
+}
+
+# gefilterde, live doelgroep: alleen status "device", optioneel op model
+T_SERIAL=(); T_NAME=(); T_MODEL=(); T_RELEASE=(); T_ABI=()
+list_targets(){
+  local model_filter="${1:-}"
+  T_SERIAL=(); T_NAME=(); T_MODEL=(); T_RELEASE=(); T_ABI=()
+  scan_adb_devices
+  local i serial status ip name model release abi
+  for i in "${!ALL_SERIALS[@]}"; do
+    serial="${ALL_SERIALS[$i]}"; status="${ALL_STATUS[$i]}"
+    [ "$status" = "device" ] || continue
+    model="$(get_prop "$serial" ro.product.model)"
+    release="$(get_prop "$serial" ro.build.version.release)"
+    abi="$(get_prop "$serial" ro.product.cpu.abi)"
+    if [ -n "$model_filter" ]; then
+      case "$model" in
+        *"$model_filter"*) : ;;
+        *) continue ;;
+      esac
+    fi
+    ip="${serial%%:*}"
+    name="$(name_for_ip "$ip")"
+    [ "$serial" = "$ip" ] && [ "$name" = "-" ] && name="usb"
+    T_SERIAL+=("$serial"); T_NAME+=("$name"); T_MODEL+=("$model"); T_RELEASE+=("$release"); T_ABI+=("$abi")
+  done
+}
+
+report_skipped(){
+  local s
+  if [ "${#OFFLINE_SERIALS[@]}" -gt 0 ]; then
+    for s in "${OFFLINE_SERIALS[@]}"; do
+      warn "overgeslagen (offline): $s ($(name_for_ip "${s%%:*}"))"
+    done
+  fi
+  if [ "${#UNAUTH_SERIALS[@]}" -gt 0 ]; then
+    for s in "${UNAUTH_SERIALS[@]}"; do
+      warn "overgeslagen (unauthorized): $s ($(name_for_ip "${s%%:*}"))"
+    done
+  fi
+}
+
+# ============================================================
+# lokale bestandslijst (relatief aan pack-dir)
+# ============================================================
+REL_FILES=()
+build_local_file_list(){
+  local dir="$1" f
+  REL_FILES=()
+  while IFS= read -r f || [ -n "$f" ]; do
+    REL_FILES+=("${f#$dir/}")
+  done < <(find "$dir" -type f ! -name '.DS_Store' -print | LC_ALL=C sort)
+}
+
+# ============================================================
+# verify: manifest byte-diff + bestandslijst in 1 round-trip
+# ============================================================
+verify_manifest(){
+  local serial="$1" local_manifest="$2" remote_dir="$3" out
+  out="$TMPDIR_ZS/$(sanitize "$serial").manifest"
+  adb -s "$serial" exec-out cat "$remote_dir/manifest.json" </dev/null > "$out" 2>/dev/null || true
+  cmp -s "$local_manifest" "$out"
+}
+
+verify_files_present(){
+  local serial="$1" remote_dir="$2" list="" script out rc=0
+  [ "${#REL_FILES[@]}" -gt 0 ] && list="$(printf '%s ' "${REL_FILES[@]}")"
+  script="cd '$remote_dir' 2>/dev/null || exit 9; for f in $list; do [ -f \"\$f\" ] || echo MISSING \$f; done"
+  out="$(adb -s "$serial" shell "$script" </dev/null 2>/dev/null | tr -d '\r')" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    printf 'ADB-fout: device onbereikbaar tijdens verify\n'
+    return 1
+  fi
+  [ -z "$out" ] || { printf '%s\n' "$out"; return 1; }
+  return 0
+}
+
+count_present_files(){
+  local serial="$1" remote_dir="$2" list="" script out rc=0
+  [ "${#REL_FILES[@]}" -gt 0 ] && list="$(printf '%s ' "${REL_FILES[@]}")"
+  script="cd '$remote_dir' 2>/dev/null || exit 0; for f in $list; do [ -f \"\$f\" ] && echo P; done"
+  out="$(adb -s "$serial" shell "$script" </dev/null 2>/dev/null | tr -d '\r')" || rc=$?
+  [ "$rc" -eq 0 ] || { printf '0'; return 0; }
+  printf '%s' "$out" | grep -c '^P' || true
+}
+
+get_remote_manifest_version(){
+  local serial="$1" raw
+  raw="$(adb -s "$serial" exec-out cat "$REMOTE_PACK/manifest.json" </dev/null 2>/dev/null || true)"
+  [ -n "$raw" ] || { printf ''; return 0; }
+  printf '%s' "$raw" \
+    | grep -oE '"(version|versie)"[[:space:]]*:[[:space:]]*("[^"]*"|-?[0-9]+(\.[0-9]+)?)' \
+    | head -1 \
+    | sed -E 's/^"[a-zA-Z]+"[[:space:]]*:[[:space:]]*//' \
+    | tr -d '"' || true
+  return 0
+}
+
+# ============================================================
+# atomische swap: pack -> .pack_old, .staging -> pack, .pack_old weg
+# ============================================================
+do_swap(){
+  local serial="$1" had_old="N" rc=0
+  had_old="$(adb -s "$serial" shell "[ -d '$REMOTE_PACK' ] && echo Y || echo N" </dev/null 2>/dev/null | tr -d '\r\n')" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "swap: kon niet controleren of er al een pack stond"
+    return 1
+  fi
+  if [ "$had_old" = "Y" ]; then
+    if ! adb -s "$serial" shell "mv '$REMOTE_PACK' '$REMOTE_PACK_OLD'" </dev/null >/dev/null 2>&1; then
+      echo "swap: kon oude pack niet naar .pack_old zetten"
+      return 1
+    fi
+  fi
+  if ! adb -s "$serial" shell "mv '$REMOTE_STAGING' '$REMOTE_PACK'" </dev/null >/dev/null 2>&1; then
+    echo "swap: kon staging niet activeren, oude pack herstellen"
+    [ "$had_old" = "Y" ] && adb -s "$serial" shell "mv '$REMOTE_PACK_OLD' '$REMOTE_PACK'" </dev/null >/dev/null 2>&1 || true
+    return 1
+  fi
+  adb -s "$serial" shell "rm -rf '$REMOTE_PACK_OLD'" </dev/null >/dev/null 2>&1 || true
+  return 0
+}
+
+# ============================================================
+# push: 1 device
+# ============================================================
+push_one_device(){
+  local serial="$1" name="$2" pack_dir="$3" local_manifest="$4" logf="$5" resf="$6"
+  local missing_out files_ok swap_msg swap_ok
+  {
+    echo "== $name ($serial) =="
+    adb -s "$serial" shell "mkdir -p '$REMOTE_BASE'" </dev/null >/dev/null 2>&1 || true
+
+    echo "-> staging opruimen"
+    if ! adb -s "$serial" shell "rm -rf '$REMOTE_STAGING'" </dev/null >/dev/null 2>&1; then
+      echo "kon .staging niet opruimen"
+      printf 'STATUS=FAIL\nREASON=staging-cleanup\n' > "$resf"
+      return 1
+    fi
+
+    echo "-> push $pack_dir -> $REMOTE_STAGING"
+    if ! adb -s "$serial" push "$pack_dir" "$REMOTE_STAGING" </dev/null >/dev/null 2>&1; then
+      echo "adb push gefaald"
+      adb -s "$serial" shell "rm -rf '$REMOTE_STAGING'" </dev/null >/dev/null 2>&1 || true
+      printf 'STATUS=FAIL\nREASON=push\n' > "$resf"
+      return 1
+    fi
+
+    echo "-> verify manifest.json (byte-diff)"
+    if ! verify_manifest "$serial" "$local_manifest" "$REMOTE_STAGING"; then
+      echo "manifest.json komt niet overeen"
+      adb -s "$serial" shell "rm -rf '$REMOTE_STAGING'" </dev/null >/dev/null 2>&1 || true
+      printf 'STATUS=FAIL\nREASON=manifest-diff\n' > "$resf"
+      return 1
+    fi
+
+    echo "-> verify bestandslijst (${#REL_FILES[@]} bestanden, 1 round-trip)"
+    missing_out="$(verify_files_present "$serial" "$REMOTE_STAGING")" && files_ok=1 || files_ok=0
+    if [ "$files_ok" -eq 0 ]; then
+      echo "ontbrekende bestanden op device:"
+      echo "$missing_out"
+      adb -s "$serial" shell "rm -rf '$REMOTE_STAGING'" </dev/null >/dev/null 2>&1 || true
+      printf 'STATUS=FAIL\nREASON=missing-files\n' > "$resf"
+      return 1
+    fi
+
+    echo "-> swap staging -> pack"
+    swap_msg="$(do_swap "$serial")" && swap_ok=1 || swap_ok=0
+    if [ "$swap_ok" -eq 0 ]; then
+      echo "$swap_msg"
+      printf 'STATUS=FAIL\nREASON=swap\n' > "$resf"
+      return 1
+    fi
+
+    echo "OK"
+    printf 'STATUS=OK\nFILES=%s\n' "${#REL_FILES[@]}" > "$resf"
+    return 0
+  } > "$logf" 2>&1
+  return 0
+}
+
+print_push_table(){
+  info ""
+  info "${C_BOLD}resultaat${C_RST}"
+  printf '%-12s %-18s %-8s %s\n' "NAAM" "SERIAL" "STATUS" "DETAIL"
+  local i serial resf status reason failcount=0
+  for i in "${!T_SERIAL[@]}"; do
+    serial="${T_SERIAL[$i]}"
+    resf="$TMPDIR_ZS/$(sanitize "$serial").res"
+    status="FAIL"; reason="geen resultaat"
+    if [ -f "$resf" ]; then
+      status="$(awk -F= '$1=="STATUS"{print $2}' "$resf")"
+      reason="$(awk -F= '$1=="REASON"{print $2}' "$resf")"
+    fi
+    if [ "$status" = "OK" ]; then
+      printf '%-12s %-18s %s%-8s%s %s\n' "${T_NAME[$i]}" "$serial" "$C_GRN" "OK" "$C_RST" "ok"
+    else
+      failcount=$((failcount+1))
+      printf '%-12s %-18s %s%-8s%s %s\n' "${T_NAME[$i]}" "$serial" "$C_RED" "FAILED" "$C_RST" "$reason"
+    fi
+  done
+  return "$failcount"
+}
+
+cmd_push(){
+  local pack_dir="$PACK_DIR_DEFAULT" model_filter="" parallel=0 dryrun=0 restart=0
+  local args=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --parallel) parallel=1 ;;
+      --dry-run) dryrun=1 ;;
+      --restart) restart=1 ;;
+      --model) shift; model_filter="${1:-}" ;;
+      -*) err "onbekende optie: $1"; exit 1 ;;
+      *) args+=("$1") ;;
+    esac
+    shift
+  done
+  [ "${#args[@]}" -ge 1 ] && pack_dir="${args[0]}"
+
+  [ -d "$pack_dir" ] || { err "pack-dir niet gevonden: $pack_dir"; exit 1; }
+  local local_manifest="$pack_dir/manifest.json"
+  [ -f "$local_manifest" ] || { err "geen manifest.json in $pack_dir"; exit 1; }
+
+  build_local_file_list "$pack_dir"
+  list_targets "$model_filter"
+  report_skipped
+  [ "${#T_SERIAL[@]}" -eq 0 ] && { err "geen devices met status 'device' gevonden (na filter)."; exit 1; }
+
+  info "${C_BOLD}push${C_RST}: $pack_dir -> ${#T_SERIAL[@]} device(s), ${#REL_FILES[@]} bestand(en)"
+
+  if [ "$dryrun" -eq 1 ]; then
+    info "DRY RUN — geen device wordt aangeraakt."
+    local i
+    for i in "${!T_SERIAL[@]}"; do
+      info "  zou pushen naar: ${T_NAME[$i]} (${T_SERIAL[$i]}, ${T_MODEL[$i]})"
+    done
+    exit 0
+  fi
+
+  local i serial name logf resf pids=()
+  for i in "${!T_SERIAL[@]}"; do
+    serial="${T_SERIAL[$i]}"; name="${T_NAME[$i]}"
+    logf="$TMPDIR_ZS/$(sanitize "$serial").log"
+    resf="$TMPDIR_ZS/$(sanitize "$serial").res"
+    if [ "$parallel" -eq 1 ]; then
+      push_one_device "$serial" "$name" "$pack_dir" "$local_manifest" "$logf" "$resf" &
+      pids+=("$!")
+    else
+      push_one_device "$serial" "$name" "$pack_dir" "$local_manifest" "$logf" "$resf" || true
+      cat "$logf"
+    fi
+  done
+
+  if [ "$parallel" -eq 1 ]; then
+    local p
+    if [ "${#pids[@]}" -gt 0 ]; then
+      for p in "${pids[@]}"; do wait "$p" || true; done
+    fi
+    for i in "${!T_SERIAL[@]}"; do
+      serial="${T_SERIAL[$i]}"
+      cat "$TMPDIR_ZS/$(sanitize "$serial").log"
+    done
+  fi
+
+  [ "$restart" -eq 1 ] && { restart_targets "$model_filter" || true; }
+
+  if print_push_table; then exit 0; else exit 1; fi
+}
+
+# ============================================================
+# status
+# ============================================================
+VERS=(); PRESENT_COUNTS=()
+
+print_status_table_full(){
+  local consensus="$1" expected="$2"
+  info ""
+  info "${C_BOLD}status${C_RST} (verwacht: ${expected} bestand(en) uit $PACK_DIR_DEFAULT/, consensus versie: ${consensus:-onbekend})"
+  printf '%-12s %-18s %-10s %-8s %-8s %-12s %s\n' "NAAM" "SERIAL" "MODEL" "ANDROID" "VERSIE" "BESTANDEN" "PACK"
+  local i serial ver present state any_mismatch=0
+  for i in "${!T_SERIAL[@]}"; do
+    serial="${T_SERIAL[$i]}"; ver="${VERS[$i]}"; present="${PRESENT_COUNTS[$i]}"
+    if [ -z "$ver" ]; then
+      state="${C_RED}GEEN PACK${C_RST}"; any_mismatch=1
+    elif [ -n "$present" ] && [ "$expected" -gt 0 ] && [ "$present" -ne "$expected" ]; then
+      state="${C_YLW}AFWIJKEND${C_RST}"; any_mismatch=1
+    elif [ -n "$consensus" ] && [ "$ver" != "$consensus" ]; then
+      state="${C_YLW}AFWIJKEND${C_RST}"; any_mismatch=1
+    else
+      state="${C_GRN}OK${C_RST}"
+    fi
+    printf '%-12s %-18s %-10s %-8s %-8s %-12s %b\n' \
+      "${T_NAME[$i]}" "$serial" "${T_MODEL[$i]}" "${T_RELEASE[$i]}" "${ver:--}" "${present:--}/${expected}" "$state"
+  done
+  [ "$any_mismatch" -eq 1 ] && { warn "niet alle devices draaien dezelfde versie / hebben een compleet pack."; return 1; }
+  ok "alle devices op consensus-versie '${consensus}' met compleet pack."
+  return 0
+}
+
+cmd_status(){
+  local model_filter=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --model) shift; model_filter="${1:-}" ;;
+      *) err "onbekende optie: $1"; exit 1 ;;
+    esac
+    shift
+  done
+
+  local pack_dir="$PACK_DIR_DEFAULT"
+  if [ -d "$pack_dir" ]; then build_local_file_list "$pack_dir"; else REL_FILES=(); fi
+  local expected_count="${#REL_FILES[@]}"
+
+  list_targets "$model_filter"
+  report_skipped
+  [ "${#T_SERIAL[@]}" -eq 0 ] && { err "geen devices gevonden."; exit 1; }
+
+  local i serial ver present
+  VERS=(); PRESENT_COUNTS=()
+  for i in "${!T_SERIAL[@]}"; do
+    serial="${T_SERIAL[$i]}"
+    ver="$(get_remote_manifest_version "$serial")"
+    VERS+=("$ver")
+    if [ "$expected_count" -gt 0 ] && [ -n "$ver" ]; then
+      present="$(count_present_files "$serial" "$REMOTE_PACK")"
+    else
+      present=""
+    fi
+    PRESENT_COUNTS+=("$present")
+  done
+
+  local consensus=""
+  if [ "${#VERS[@]}" -gt 0 ]; then
+    consensus="$(printf '%s\n' "${VERS[@]}" | grep -v '^$' | LC_ALL=C sort | uniq -c | LC_ALL=C sort -rn | head -1 | awk '{print $2}' || true)"
+  fi
+
+  if print_status_table_full "$consensus" "$expected_count"; then exit 0; else exit 1; fi
+}
+
+# ============================================================
+# devices
+# ============================================================
+cmd_devices(){
+  local model_filter=""
+  while [ $# -gt 0 ]; do
+    case "$1" in --model) shift; model_filter="${1:-}" ;; *) err "onbekende optie: $1"; exit 1 ;; esac
+    shift
+  done
+  scan_adb_devices
+  info "${C_BOLD}devices${C_RST} (adb devices, gekoppeld aan $DEVICES_FILE)"
+  printf '%-20s %-10s %-14s %-10s %-8s\n' "SERIAL" "NAAM" "STATUS" "MODEL" "ANDROID"
+  local i serial status ip name model release
+  for i in "${!ALL_SERIALS[@]}"; do
+    serial="${ALL_SERIALS[$i]}"; status="${ALL_STATUS[$i]}"
+    ip="${serial%%:*}"; name="$(name_for_ip "$ip")"
+    if [ "$status" = "device" ]; then
+      model="$(get_prop "$serial" ro.product.model)"
+      release="$(get_prop "$serial" ro.build.version.release)"
+      if [ -n "$model_filter" ]; then
+        case "$model" in *"$model_filter"*) : ;; *) continue ;; esac
+      fi
+      printf '%-20s %-10s %s%-14s%s %-10s %-8s\n' "$serial" "$name" "$C_GRN" "$status" "$C_RST" "$model" "$release"
+    else
+      [ -n "$model_filter" ] && continue
+      printf '%-20s %-10s %s%-14s%s %-10s %-8s\n' "$serial" "$name" "$C_YLW" "$status" "$C_RST" "-" "-"
+    fi
+  done
+}
+
+# ============================================================
+# pair / connect
+# ============================================================
+cmd_pair(){
+  local name="${1:-}"
+  [ -n "$name" ] || { err "gebruik: $SCRIPT_NAME pair <naam>"; exit 1; }
+
+  info "pair: adb -d tcpip $ADB_PORT"
+  if ! adb -d tcpip "$ADB_PORT" </dev/null > "$TMPDIR_ZS/pair.log" 2>&1; then
+    err "adb -d tcpip gefaald (0 of >1 USB devices verbonden?)"
+    cat "$TMPDIR_ZS/pair.log" >&2
+    exit 1
+  fi
+  sleep 2
+
+  local ip_line ip_addr
+  ip_line="$(adb -d shell ip -f inet addr show wlan0 </dev/null 2>/dev/null || true)"
+  ip_addr="$(printf '%s' "$ip_line" | awk '/inet /{print $2}' | head -1 | cut -d/ -f1)"
+  if [ -z "$ip_addr" ]; then
+    ip_addr="$(adb -d shell getprop dhcp.wlan0.ipaddress </dev/null 2>/dev/null | tr -d '\r\n')" || true
+  fi
+  if [ -z "$ip_addr" ]; then
+    warn "kon geen wifi-IP uitlezen ('ip addr show wlan0' EN 'getprop dhcp.wlan0.ipaddress' beide leeg)."
+    warn "is wifi verbonden op het device?"
+    exit 1
+  fi
+
+  info "wifi-IP: $ip_addr"
+  touch "$DEVICES_FILE"
+  local tmp="$TMPDIR_ZS/devices.txt.new"
+  awk -v n="$name" -v ip="$ip_addr" '
+    $1==n { print n" "ip; found=1; next }
+    { print }
+    END { if (!found) print n" "ip }
+  ' "$DEVICES_FILE" > "$tmp"
+  mv "$tmp" "$DEVICES_FILE"
+
+  ok "'$name' -> $ip_addr:$ADB_PORT weggeschreven in $DEVICES_FILE"
+  info "kabel kan eruit. draai nu: $SCRIPT_NAME connect"
+}
+
+cmd_connect(){
+  load_devices_file
+  [ "${#DEV_NAMES[@]}" -eq 0 ] && { err "$DEVICES_FILE leeg of niet gevonden. Draai eerst: $SCRIPT_NAME pair <naam>"; exit 1; }
+  local i n ip out rc=0
+  for i in "${!DEV_NAMES[@]}"; do
+    n="${DEV_NAMES[$i]}"; ip="${DEV_IPS[$i]}"
+    out="$(adb connect "${ip}:${ADB_PORT}" </dev/null 2>&1 || true)"
+    case "$out" in
+      *"connected to"*|*"already connected"*) ok "$n ($ip): $out" ;;
+      *) err "$n ($ip): $out"; rc=1 ;;
+    esac
+  done
+  exit "$rc"
+}
+
+# ============================================================
+# install
+# ============================================================
+cmd_install(){
+  local apk="" model_filter=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --model) shift; model_filter="${1:-}" ;;
+      -*) err "onbekende optie: $1"; exit 1 ;;
+      *) apk="$1" ;;
+    esac
+    shift
+  done
+  [ -n "$apk" ] || { err "gebruik: $SCRIPT_NAME install <apk> [--model x]"; exit 1; }
+  [ -f "$apk" ] || { err "apk niet gevonden: $apk"; exit 1; }
+
+  local apk_abis
+  apk_abis="$(unzip -l "$apk" 2>/dev/null | grep -oE 'lib/[^/]+/' | LC_ALL=C sort -u | tr -d '/' | sed 's#^lib##' || true)"
+
+  list_targets "$model_filter"
+  report_skipped
+  [ "${#T_SERIAL[@]}" -eq 0 ] && { err "geen devices gevonden."; exit 1; }
+
+  if [ "${#T_SERIAL[@]}" -gt 1 ]; then
+    warn "installeren op ${#T_SERIAL[@]} devices — zeldzame/dure actie."
+    read -r -p "doorgaan? [y/N] " answer || answer=""
+    case "$answer" in y|yes) ;; *) info "geannuleerd."; exit 1 ;; esac
+  fi
+
+  local i serial dev_abi rc=0
+  for i in "${!T_SERIAL[@]}"; do
+    serial="${T_SERIAL[$i]}"
+    dev_abi="${T_ABI[$i]}"
+    if [ -n "$apk_abis" ]; then
+      case "$apk_abis" in
+        *"$dev_abi"*) info "[${T_NAME[$i]}] device abi=$dev_abi, apk abi's: $(printf '%s' "$apk_abis" | tr '\n' ' ') (match)" ;;
+        *) warn "[${T_NAME[$i]}] device abi=$dev_abi komt niet voor in apk abi's: $(printf '%s' "$apk_abis" | tr '\n' ' ')" ;;
+      esac
+    else
+      info "[${T_NAME[$i]}] device abi=$dev_abi (apk heeft geen native libs, of abi kon niet gelezen worden)"
+    fi
+    info "-> adb install -r naar ${T_NAME[$i]} ($serial)"
+    local ilog="$TMPDIR_ZS/install_$(sanitize "$serial").log"
+    if adb -s "$serial" install -r "$apk" </dev/null > "$ilog" 2>&1 && grep -qi "^Success" "$ilog"; then
+      ok "[${T_NAME[$i]}] geinstalleerd"
+    else
+      err "[${T_NAME[$i]}] install gefaald: $(tail -1 "$ilog")"
+      rc=1
+    fi
+  done
+  exit "$rc"
+}
+
+# ============================================================
+# restart
+# ============================================================
+restart_targets(){
+  local model_filter="${1:-}"
+  [ -n "$ZS_APP_ID" ] || { err "ZS_APP_ID niet gezet. Zet 'm bovenin het script of: ZS_APP_ID=com.jouw.pkg $SCRIPT_NAME restart"; return 1; }
+
+  list_targets "$model_filter"
+  report_skipped
+  [ "${#T_SERIAL[@]}" -eq 0 ] && { err "geen devices gevonden."; return 1; }
+
+  local i serial path rc=0
+  for i in "${!T_SERIAL[@]}"; do
+    serial="${T_SERIAL[$i]}"
+    path="$(adb -s "$serial" shell pm path "$ZS_APP_ID" </dev/null 2>/dev/null | tr -d '\r')" || true
+    if [ -z "$path" ]; then
+      err "[${T_NAME[$i]}] app $ZS_APP_ID niet geinstalleerd"; rc=1; continue
+    fi
+    adb -s "$serial" shell am force-stop "$ZS_APP_ID" </dev/null >/dev/null 2>&1 || true
+    if adb -s "$serial" shell monkey -p "$ZS_APP_ID" -c android.intent.category.LAUNCHER 1 </dev/null >/dev/null 2>&1; then
+      ok "[${T_NAME[$i]}] herstart"
+    else
+      err "[${T_NAME[$i]}] relaunch gefaald"; rc=1
+    fi
+  done
+  return "$rc"
+}
+
+cmd_restart(){
+  local model_filter=""
+  while [ $# -gt 0 ]; do
+    case "$1" in --model) shift; model_filter="${1:-}" ;; *) err "onbekende optie: $1"; exit 1 ;; esac
+    shift
+  done
+  restart_targets "$model_filter"
+  exit $?
+}
+
+# ============================================================
+# usage + dispatch
+# ============================================================
+usage(){
+  cat <<EOF
+$SCRIPT_NAME — deploy zelfscanner content-pack + app naar Zebra devices (MC18N0 / PS20J) via adb/wifi
+
+gebruik:
+  $SCRIPT_NAME pair <naam>            koppel het USB-verbonden device, schrijf naam+ip in $DEVICES_FILE
+  $SCRIPT_NAME connect                adb connect naar alle devices in $DEVICES_FILE
+  $SCRIPT_NAME devices                toon wat adb ziet + naam/model/android-versie
+  $SCRIPT_NAME push [pack-dir]        push content-pack (default: $PACK_DIR_DEFAULT/), atomische swap
+  $SCRIPT_NAME status                 versie + bestandscount per device, vlagt afwijkingen
+  $SCRIPT_NAME install <apk>          adb install -r naar alle (gefilterde) devices
+  $SCRIPT_NAME restart                force-stop + relaunch app (\$ZS_APP_ID)
+
+opties (waar van toepassing):
+  --model <substr>     filter op ro.product.model (bv. MC18, PS20)
+  --parallel           (push) devices in de achtergrond, gebundelde output achteraf
+  --dry-run            (push) laat zien wat er zou gebeuren, raakt niets aan
+  --restart            (push) restart de app na een succesvolle push
+
+env:
+  ZS_APP_ID             package-naam van de app (nu: ${ZS_APP_ID:-<niet gezet>})
+
+let op:
+  'adb tcpip' overleeft GEEN reboot van het device. Na een herstart moet je
+  opnieuw 'pair' via USB draaien. Mogelijke persist-optie op stock AOSP is
+  'setprop persist.adb.tcp.port $ADB_PORT' (adbd start dan bij boot al in
+  tcp-mode) — op deze Zebra-builds ONBEVESTIGD of shell dat mag zetten,
+  probeer het zelf en vertrouw er niet blind op.
+EOF
+}
+
+main(){
+  require_adb
+  load_devices_file
+  local cmd="${1:-}"
+  [ $# -gt 0 ] && shift
+  case "$cmd" in
+    pair) cmd_pair "$@" ;;
+    connect) cmd_connect "$@" ;;
+    devices) cmd_devices "$@" ;;
+    push) cmd_push "$@" ;;
+    status) cmd_status "$@" ;;
+    install) cmd_install "$@" ;;
+    restart) cmd_restart "$@" ;;
+    -h|--help|help|"") usage ;;
+    *) err "onbekend subcommando: $cmd"; usage; exit 1 ;;
+  esac
+}
+
+main "$@"

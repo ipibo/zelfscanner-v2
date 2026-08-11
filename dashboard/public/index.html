@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cradle Dashboard</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 15px/1.4 -apple-system, system-ui, sans-serif;
+    background: #0e1116; color: #e6edf3; padding: 24px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #8b949e; margin: 0 0 20px; font-size: 13px; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  .card {
+    background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+    padding: 16px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .model { font-weight: 700; font-size: 16px; }
+  .serial { color: #8b949e; font-size: 12px; word-break: break-all; }
+  .pill { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; letter-spacing: .5px; }
+  .on { background: #14532d; color: #7ee787; }
+  .off { background: #3d1417; color: #ff7b72; }
+  .docked { background: #1f2d4d; color: #79c0ff; }
+  .undocked { background: #3a2d10; color: #ffd166; }
+  button {
+    appearance: none; border: 0; border-radius: 9px; padding: 11px;
+    font-size: 15px; font-weight: 700; letter-spacing: .5px; cursor: pointer;
+    background: #1f6feb; color: #fff;
+  }
+  button:disabled { background: #21262d; color: #6e7681; cursor: not-allowed; }
+  .flash { color: #7ee787; font-size: 12px; min-height: 14px; }
+  .empty { color: #8b949e; grid-column: 1 / -1; text-align: center; padding: 40px; }
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+  .toolbar label { color: #8b949e; font-size: 13px; }
+  .toolbar input { width: 54px; background: #161b22; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 6px; }
+  button.all { background: #b62324; padding: 9px 18px; font-size: 14px; }
+  button.all:hover { background: #d12f30; }
+  .allFlash { color: #7ee787; font-size: 13px; }
+</style>
+</head>
+<body>
+  <h1>Cradle Dashboard</h1>
+  <p class="sub">Connected self-scanners report here. Unlock fires on the device itself.</p>
+  <div class="toolbar">
+    <label>unlock seconds</label>
+    <input id="secs" type="number" min="10" max="30" value="10" />
+    <button id="unlockAll" class="all" onclick="_unlockAll()">UNLOCK ALL</button>
+    <span id="allFlash" class="allFlash"></span>
+  </div>
+  <div id="grid" class="grid"></div>
+
+<script>
+const grid = document.getElementById('grid');
+const secsInput = document.getElementById('secs');
+const flashes = {}; // serial -> message
+
+function secs() {
+  let s = parseInt(secsInput.value, 10) || 10;
+  return Math.max(10, Math.min(30, s));
+}
+
+async function unlock(serial) {
+  flashes[serial] = 'sending…';
+  render(lastDevices);
+  try {
+    const r = await fetch('/api/unlock', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({serial, seconds: secs()}),
+    });
+    const j = await r.json();
+    flashes[serial] = j.ok ? `unlock sent (${j.seconds}s)` : ('error: ' + (j.error||'?'));
+  } catch (e) {
+    flashes[serial] = 'network error';
+  }
+  render(lastDevices);
+  setTimeout(() => { flashes[serial] = ''; render(lastDevices); }, 4000);
+}
+window._unlock = unlock;
+
+const allFlash = document.getElementById('allFlash');
+async function unlockAll() {
+  const btn = document.getElementById('unlockAll');
+  btn.disabled = true;
+  allFlash.textContent = 'sending…';
+  try {
+    const r = await fetch('/api/unlock-all', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({seconds: secs()}),
+    });
+    const j = await r.json();
+    allFlash.textContent = j.ok
+      ? `unlock sent to ${j.count} device${j.count === 1 ? '' : 's'} (${j.seconds}s)`
+      : 'error';
+  } catch (e) {
+    allFlash.textContent = 'network error';
+  }
+  btn.disabled = false;
+  setTimeout(() => { allFlash.textContent = ''; }, 4000);
+}
+window._unlockAll = unlockAll;
+
+let lastDevices = [];
+function render(list) {
+  lastDevices = list;
+  if (!list.length) {
+    grid.innerHTML = '<div class="empty">No devices connected yet.<br>Launch the app on a docked MC18.</div>';
+    return;
+  }
+  grid.innerHTML = list.map(d => `
+    <div class="card">
+      <div class="row">
+        <span class="model">${d.model}</span>
+        <span class="pill ${d.online ? 'on' : 'off'}">${d.online ? 'ONLINE' : (d.secondsAgo + 's ago')}</span>
+      </div>
+      <div class="serial">${d.serial}</div>
+      <div class="row">
+        <span class="pill ${d.docked ? 'docked' : 'undocked'}">${d.docked ? 'DOCKED' : 'UNDOCKED'}</span>
+      </div>
+      <button onclick="_unlock('${d.serial}')" ${d.online ? '' : 'disabled'}>UNLOCK</button>
+      <div class="flash">${flashes[d.serial] || ''}</div>
+    </div>
+  `).join('');
+}
+
+async function poll() {
+  try {
+    const r = await fetch('/api/devices');
+    const j = await r.json();
+    render(j.devices || []);
+  } catch (e) { /* keep last */ }
+}
+poll();
+setInterval(poll, 1500);
+</script>
+</body>
+</html>

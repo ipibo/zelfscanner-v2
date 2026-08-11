@@ -1,0 +1,43 @@
+<!doctype html>
+<!--
+  Zebra CapCode (signature capture anchor) — Pattern 9.
+  Spec: Signature_Capture_code.pdf v0.2.
+  Layout L→R: 7X quiet | Start(9X) | 2X sep | BOX | 2X sep | Stop(9X) | 7X quiet
+  Pattern 9 bar/space widths in X: B3 S1 B1 S1 B1 S1 B1 (4 bars, 3 spaces = 9X).
+  Both sides identical. Bars span full box height.
+
+  Use: open fullscreen, max screen brightness, point the PS20J imager at it
+  (~15-25cm), press SCANNER EYE in the app, then pull the hardware trigger.
+  The scanner returns a JPEG of the BOX region (empty here = white test frame).
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html,body{margin:0;height:100%;background:#fff;display:flex;align-items:center;justify-content:center}
+  svg{width:90vw;max-width:1100px;height:auto}
+  .hint{position:fixed;bottom:8px;left:0;right:0;text-align:center;font:14px sans-serif;color:#999}
+</style>
+</head>
+<body>
+<!-- X=8px. Start/stop = 72px (9X). sep=16px (2X). box=600px. quiet=56px (7X). -->
+<svg viewBox="0 0 888 560" xmlns="http://www.w3.org/2000/svg">
+  <rect width="888" height="560" fill="#fff"/>
+  <g fill="#000">
+    <!-- START pattern (x0=56): B3 S1 B1 S1 B1 S1 B1 -->
+    <rect x="56"  y="40" width="24" height="480"/>
+    <rect x="88"  y="40" width="8"  height="480"/>
+    <rect x="104" y="40" width="8"  height="480"/>
+    <rect x="120" y="40" width="8"  height="480"/>
+    <!-- STOP pattern (x0=760): identical -->
+    <rect x="760" y="40" width="24" height="480"/>
+    <rect x="792" y="40" width="8"  height="480"/>
+    <rect x="808" y="40" width="8"  height="480"/>
+    <rect x="824" y="40" width="8"  height="480"/>
+  </g>
+  <!-- optional thin box outline (line width irrelevant per spec); comment out for pure window -->
+  <rect x="144" y="40" width="600" height="480" fill="none" stroke="#000" stroke-width="2"/>
+</svg>
+<div class="hint">Zebra CapCode · Pattern 9 · point PS20J imager here &amp; pull trigger</div>
+</body>
+</html>
