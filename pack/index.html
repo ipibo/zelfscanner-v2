@@ -10,6 +10,13 @@
     background: rgba(200, 0, 0, 0.85); color: #fff; font: bold 8vw sans-serif; text-align: center;
   }
   #error.show { display: flex; }
+  #caption {
+    position: absolute; left: 0; right: 0; bottom: 0; display: none; align-items: center; justify-content: center;
+    padding: 6vw 6vw calc(6vw + 24px); box-sizing: border-box;
+    background: linear-gradient(to top, rgba(0,0,0,0.75), rgba(0,0,0,0));
+    color: #fff; font: 5.5vw sans-serif; text-align: center;
+  }
+  #caption.show { display: flex; }
   #debug {
     position: absolute; bottom: 8px; left: 8px; color: #7CFC00; font: 12px monospace; opacity: 0.85;
   }
@@ -17,7 +24,9 @@
 </head>
 <body>
   <video id="player" autoplay loop muted playsinline></video>
+  <audio id="narrator"></audio>
   <div id="error"></div>
+  <div id="caption"></div>
   <div id="debug">loading pack…</div>
   <script>
     // <script src="runtime.js"> does NOT load on this WebView (Android 5.1 /

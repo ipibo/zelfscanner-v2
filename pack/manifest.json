@@ -1,19 +1,38 @@
 {
-  "version": 1,
+  "version": "0.1.0",
   "scenes": [
     {
       "id": "intro",
-      "video": "assets/test.mp4",
-      "expectScan": "1111111111111"
+      "audio": "assets/audio/intro.mp3",
+      "text": "Welkom bij de zelfscanner-tour. Scan het eerste product om te beginnen.",
+      "expectScan": "8712345670012",
+      "next": "dairy"
     },
     {
-      "id": "middle",
-      "video": "assets/test.mp4",
-      "expectScan": "2222222222222"
+      "id": "dairy",
+      "audio": "assets/audio/dairy.mp3",
+      "text": "Loop naar het zuivelschap en scan de melk.",
+      "expectScan": "8712345670029",
+      "next": "bread"
+    },
+    {
+      "id": "bread",
+      "audio": "assets/audio/bread.mp3",
+      "text": "Loop naar het broodschap en scan een brood.",
+      "expectScan": "8712345670036",
+      "next": "checkout"
+    },
+    {
+      "id": "checkout",
+      "audio": "assets/audio/checkout.mp3",
+      "text": "Loop naar de kassa en scan je laatste product.",
+      "expectScan": "8712345670043",
+      "next": "end"
     },
     {
       "id": "end",
-      "video": "assets/test.mp4",
+      "audio": "assets/audio/end.mp3",
+      "text": "Bedankt voor het meedoen aan de tour!",
       "expectScan": null
     }
   ]

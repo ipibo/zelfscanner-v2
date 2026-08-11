@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pack-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["tools/preview-server.js", "8934"],
+      "port": 8934
+    }
+  ]
+}

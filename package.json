@@ -7,7 +7,9 @@
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
-    "test": "jest"
+    "test": "jest",
+    "pack:build": "node tools/build-manifest.js",
+    "pack:preview": "node tools/preview-server.js"
   },
   "dependencies": {
     "react": "18.2.0",

@@ -7,10 +7,13 @@
  */
 (function () {
   var video = document.getElementById('player');
+  var narrator = document.getElementById('narrator');
   var errorEl = document.getElementById('error');
+  var captionEl = document.getElementById('caption');
   var debugEl = document.getElementById('debug');
 
   var manifest = null;
+  var scenesById = {};
   var sceneIndex = 0;
   var errorTimer = null;
 
@@ -24,28 +27,69 @@
     }
   }
 
-  function loadScene(i) {
-    var scene = manifest.scenes[i];
-    if (!scene) {
-      return;
-    }
-    sceneIndex = i;
-    hideError();
-    video.src = scene.video;
-    video.currentTime = 0;
-    // This old WebView's play() doesn't return a Promise (pre-2016 Chromium),
-    // so guard before chaining .catch() -- calling .catch on undefined throws
-    // and silently aborts the rest of this function.
-    var playResult = video.play();
+  // Old Android 5.1 WebView's play() doesn't return a Promise (pre-2016
+  // Chromium) -- guard before chaining .catch(), calling .catch on undefined
+  // throws and silently aborts the rest of the caller.
+  function safePlay(el, label) {
+    var playResult = el.play();
     if (playResult && typeof playResult.catch === 'function') {
       playResult.catch(function (e) {
-        log('scene ' + scene.id + ' — play failed: ' + e.message);
+        log(label + ' — play failed: ' + e.message);
       });
     }
+  }
+
+  function loadScene(id) {
+    var scene = scenesById[id];
+    if (!scene) {
+      log('onbekende scene: ' + id);
+      return;
+    }
+    sceneIndex = manifest.scenes.indexOf(scene);
+    hideError();
+
+    if (scene.video) {
+      video.style.display = '';
+      video.src = scene.video;
+      video.currentTime = 0;
+      safePlay(video, 'scene ' + scene.id + ' video');
+    } else {
+      video.pause();
+      video.removeAttribute('src');
+      video.style.display = 'none';
+    }
+
+    if (scene.audio) {
+      narrator.src = scene.audio;
+      narrator.currentTime = 0;
+      safePlay(narrator, 'scene ' + scene.id + ' audio');
+    } else {
+      narrator.pause();
+      narrator.removeAttribute('src');
+    }
+
+    if (scene.text) {
+      captionEl.textContent = scene.text;
+      captionEl.classList.add('show');
+    } else {
+      captionEl.classList.remove('show');
+      captionEl.textContent = '';
+    }
+
     log('scene ' + scene.id + (scene.expectScan ? ' — wacht op ' + scene.expectScan : ' — einde'));
     if (!scene.expectScan) {
       post('sceneEnd', {id: scene.id});
     }
+  }
+
+  // next scene on scan-match: explicit scene.next if set, else fall back to
+  // array order (keeps old packs without "next" working unchanged).
+  function nextSceneId(scene) {
+    if (scene.next) {
+      return scene.next;
+    }
+    var following = manifest.scenes[manifest.scenes.indexOf(scene) + 1];
+    return following ? following.id : null;
   }
 
   function showError() {
@@ -66,7 +110,10 @@
       return;
     }
     if (code === scene.expectScan) {
-      loadScene(sceneIndex + 1);
+      var nextId = nextSceneId(scene);
+      if (nextId) {
+        loadScene(nextId);
+      }
     } else {
       showError();
       post('wrongScan', {expected: scene.expectScan, got: code});
@@ -79,8 +126,12 @@
     xhr.overrideMimeType('application/json; charset=utf-8'); // see index.html for why
     xhr.onload = function () {
       manifest = JSON.parse(xhr.responseText);
+      scenesById = {};
+      for (var i = 0; i < manifest.scenes.length; i++) {
+        scenesById[manifest.scenes[i].id] = manifest.scenes[i];
+      }
       log('pack v' + manifest.version + ' — ' + manifest.scenes.length + ' scenes geladen');
-      loadScene(0);
+      loadScene(manifest.scenes[0].id);
     };
     xhr.onerror = function () {
       log('manifest.json laden MISLUKT');

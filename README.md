@@ -88,6 +88,47 @@ Zebra-builds. Een kandidaat op stock AOSP is `setprop persist.adb.tcp.port
 deze builds die property mag zetten is niet getest — probeer het zelf, ga er
 niet blind van uit dat het werkt.
 
+# Content-pack pipeline (audiotour)
+
+Routes worden geschreven als plain-text bestand in `routes/`, niet direct als
+JSON. Formaat: blokken van `key: value` regels, elk blok begint met `scene:`.
+
+```
+scene: intro
+audio: assets/audio/intro.mp3
+text: Welkom. Scan het eerste product.
+scan: 8712345678901
+next: scene_2
+```
+
+Keys: `scene` (id, verplicht), `audio`, `video` (beide optioneel, `video` kan
+weg voor audio-only scenes), `text` (caption), `scan` (verwachte barcode,
+optioneel voor een eindscene), `next` (expliciete volgende scene-id).
+
+Bouwen naar `pack/manifest.json`:
+
+```bash
+npm run pack:build -- routes/<naam>.txt
+```
+
+Valideert: barcode-vorm (8-14 cijfers), of audio/video bestanden echt bestaan
+in `pack/assets/`, dubbele scene-ids, en dangling `next`-references.
+
+## Lokale preview (geen device nodig)
+
+```bash
+npm run pack:preview
+```
+
+Start een static server op `http://localhost:8934/` en opent `preview.html`:
+de echte `pack/index.html` in een iframe plus een tekstveld dat scans
+simuleert door rechtstreeks `onNativeScan()` aan te roepen — hetzelfde pad
+dat de native app via `injectJavaScript` gebruikt. `preview.html` staat
+buiten `pack/`, dus dit desktop-only stuk gaat nooit mee naar het device.
+
+(Nodig omdat desktop Chrome/Firefox XHR naar `file://`-buren blokkeert; de
+Zebra WebView staat dat wel toe.)
+
 # Troubleshooting
 
 If you can't get this to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.

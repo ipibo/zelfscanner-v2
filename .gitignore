@@ -77,3 +77,6 @@ assets/*.mp3
 assets/*.mp4
 pack/assets/*.mp3
 pack/assets/*.mp4
+
+# personal Claude Code permission config, not shared tooling
+.claude/settings.local.json

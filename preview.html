@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>zelfscanner — local pack preview</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #111; font-family: sans-serif; }
+  #frame-wrap {
+    position: absolute; top: 0; left: 0; right: 320px; bottom: 0; background: #000;
+  }
+  iframe { width: 100%; height: 100%; border: 0; }
+  #panel {
+    position: absolute; top: 0; right: 0; width: 320px; bottom: 0; box-sizing: border-box;
+    background: #1c1c1c; color: #eee; padding: 16px; overflow-y: auto;
+  }
+  #panel h1 { font-size: 16px; margin: 0 0 4px; }
+  #panel p.hint { font-size: 12px; color: #999; margin: 0 0 16px; }
+  #panel label { display: block; font-size: 12px; color: #aaa; margin-bottom: 4px; }
+  #panel input {
+    width: 100%; box-sizing: border-box; padding: 8px; font-size: 14px; margin-bottom: 8px;
+    background: #000; color: #7CFC00; border: 1px solid #444; font-family: monospace;
+  }
+  #panel button {
+    width: 100%; padding: 10px; font-size: 14px; margin-bottom: 16px; cursor: pointer;
+    background: #2a6; color: #fff; border: 0;
+  }
+  #panel button:active { background: #194; }
+  #reload { background: #444; }
+  #log { font-size: 11px; color: #7CFC00; font-family: monospace; white-space: pre-wrap; word-break: break-all; }
+</style>
+</head>
+<body>
+  <div id="frame-wrap">
+    <iframe id="pack-frame" src="pack/index.html"></iframe>
+  </div>
+  <div id="panel">
+    <h1>Scan simulator</h1>
+    <p class="hint">Desktop-only. Vult DataWedge/native scan-bridge niet aan &mdash; roept rechtstreeks <code>onNativeScan()</code> in de pack-iframe aan, precies wat de native app via <code>injectJavaScript</code> doet.</p>
+    <label for="code">Barcode</label>
+    <input id="code" type="text" placeholder="bv. 8712345678901" autocomplete="off">
+    <button id="scan">Scan</button>
+    <button id="reload">Reload pack</button>
+    <div id="log"></div>
+  </div>
+  <script>
+    (function () {
+      var frame = document.getElementById('pack-frame');
+      var input = document.getElementById('code');
+      var logEl = document.getElementById('log');
+
+      function log(msg) {
+        logEl.textContent = new Date().toLocaleTimeString() + '  ' + msg + '\n' + logEl.textContent;
+      }
+
+      function doScan() {
+        var code = input.value.trim();
+        if (!code) return;
+        var win = frame.contentWindow;
+        if (!win || typeof win.onNativeScan !== 'function') {
+          log('pack nog niet geladen (of onNativeScan ontbreekt)');
+          return;
+        }
+        win.onNativeScan(code);
+        log('scan verstuurd: ' + code);
+        input.value = '';
+        input.focus();
+      }
+
+      document.getElementById('scan').addEventListener('click', doScan);
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') doScan();
+      });
+      document.getElementById('reload').addEventListener('click', function () {
+        frame.src = 'pack/index.html?_=' + Date.now();
+        log('pack herladen');
+      });
+
+      input.focus();
+    })();
+  </script>
+</body>
+</html>
