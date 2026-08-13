@@ -1,6 +1,8 @@
 package com.zelfscannerv2;
 
+import android.app.KeyguardManager;
 import android.content.Context;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
@@ -22,6 +24,26 @@ public class MainActivity extends ReactActivity {
         .setSoftInputMode(
             WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
                 | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
+    // Kiosk devices have no PIN, but the swipe keyguard still covers the window
+    // when BootReceiver starts us from the background. Surface over it and
+    // dismiss it (safe: no secure credential is set on these devices).
+    // The legacy window flags are ignored by this device's keyguard implementation
+    // (mKeyguardOccluded stayed false), so use the API 27+ methods on API 27+
+    // and keep the flags as a fallback for older devices.
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+      setShowWhenLocked(true);
+      setTurnScreenOn(true);
+      KeyguardManager keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+      if (keyguardManager != null) {
+        keyguardManager.requestDismissKeyguard(this, null);
+      }
+    }
+    getWindow()
+        .addFlags(
+            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+                | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
+                | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
   }
 
   /** Force the soft keyboard down if anything pulled it up. */
