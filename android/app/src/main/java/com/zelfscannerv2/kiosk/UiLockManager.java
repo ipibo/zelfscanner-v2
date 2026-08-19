@@ -30,10 +30,11 @@ import javax.xml.parsers.DocumentBuilderFactory;
 public class UiLockManager implements EMDKManager.EMDKListener, ProfileManager.DataListener {
   private static final String TAG = "UiLockManager";
 
-  // version="6.3": the widest-compatible UiMgr schema version documented across Zebra's public
-  // samples for this MX generation (device runs MX 7.2.2). A newer schema version risks the
-  // whole characteristic being rejected by an older MX framework -- unconfirmed for this exact
-  // device, so start conservative and widen once verified via EMDKResults.getStatusString().
+  // version="7.1": "6.3" (previous value) isn't a documented UiMgr schema version at all --
+  // Zebra's real version list is 4.2/4.3/5.0/5.1/5.2/6.0/6.1/7.1/8.0/8.1/8.2/9.0/9.1. "7.1" is
+  // the highest of those this device actually negotiates to (confirmed via processProfile
+  // status on mc1), and is also the version NavigationBarUsage/RecentAppButtonUsage were
+  // introduced in per Zebra's UI Manager CSP docs (techdocs.zebra.com/stagenow/3-3/csp/ui/).
   //
   // processProfile has a String[] overload too, but that one is for flat
   // "emdkName.paramName=value" pairs (ProfileManager.CreateNameValuePair), NOT xml lines --
@@ -43,14 +44,27 @@ public class UiLockManager implements EMDKManager.EMDKListener, ProfileManager.D
   // <characteristic type="Profile"> with a ProfileName parm matching the profileName argument
   // below -- not the <wap-provisioningdoc> wrapper StageNow barcodes use. Each nested feature
   // characteristic also needs its own emdk_name parm per Zebra's Profile Manager guide.
-  // This device's MX-OSx negotiates down to 7.1 regardless of the version attribute requested,
-  // and at 7.1: HomeKeyUsage and NotificationPullDown validate clean, RecentAppButtonUsage needs
-  // 7.2+ ("This feature is not supported below MX-OSx 7.2" -- confirmed via processProfile's
-  // CHECK_XML per-parm errors on mc1, 2026-08-19), and StatusBarUsage errors as "Param type is
-  // not supported" for reasons still unclear. Recents/multitask blocking still has no working
-  // fix on this hardware.
   //
-  // AccessMgr / SystemSettings=3 ("None") blocks the whole Settings app -- added because the
+  // This device's MX-OSx negotiates down to 7.1 regardless of the version attribute requested.
+  // At 7.1: HomeKeyUsage and NotificationPullDown validate clean. RecentAppButtonUsage needs
+  // OSX 7.2+ and NavigationBarUsage needs OSX 6.2+ -- both rejected live on mc1 with "not
+  // supported below MX-OSx <required>", confirming this device's separate *OSX* version (which
+  // tracks the Android major version per Zebra's docs -- this device is Android 5.1.1) sits
+  // below both floors even though its MX/CSP-engine version (7.1) clears them. That OSX number
+  // is a firmware property, not something any provisioning path (StageNow included) changes --
+  // not worth retrying. StatusBarUsage errors "Param type is not supported" because it's
+  // documented SDM660-chipset-only (OSX 8.1+/MX 8.4+); MC18N0 isn't that chipset, permanent.
+  //
+  // Tried and reverted, 2026-08-19: AppMgr/ClearRecentApps (MX 4.2+, technically within reach)
+  // wipes the Recent Apps list including this app's own entry. With HomeKeyUsage=2 also making
+  // the HOME key fully inert, that combination left mc1 stuck on an empty "Your recent screens
+  // appear here" with no on-device way back -- Home did nothing, Back didn't return to the app
+  // either. Confirmed by live adb test; only recovered via `adb shell am start`. Do not re-add
+  // without also protecting this app's own package from the clear (AppMgr's
+  // ProtectedListAction/ProtectedListPackage, untested) so there's always at least one card to
+  // snap back to.
+  //
+  // AccessMgr / SystemSettings=2 blocks the whole Settings app -- added because the
   // "swipe up -> black screen" fix (Settings > Security > Screen lock > None, done by hand on
   // mc1) is trivially undone by anyone who can still reach Settings: with Recents still open,
   // that's anyone with physical access. This closes that specific hole even though Recents
@@ -62,7 +76,7 @@ public class UiLockManager implements EMDKManager.EMDKListener, ProfileManager.D
       "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
           + "<characteristic type=\"Profile\">"
           + "<parm name=\"ProfileName\" value=\"" + PROFILE_NAME + "\"/>"
-          + "<characteristic type=\"UiMgr\" version=\"6.3\">"
+          + "<characteristic type=\"UiMgr\" version=\"7.1\">"
           + "<parm name=\"emdk_name\" value=\"ui1\"/>"
           + "<parm name=\"HomeKeyUsage\" value=\"2\"/>"
           + "<parm name=\"NotificationPullDown\" value=\"2\"/>"
