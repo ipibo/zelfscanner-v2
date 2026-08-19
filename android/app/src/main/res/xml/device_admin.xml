@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- No policies needed: Device Owner status alone is enough to call
+     setLockTaskPackages/startLockTask. Kept empty on purpose. -->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+</device-admin>

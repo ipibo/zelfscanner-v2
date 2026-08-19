@@ -11,8 +11,11 @@ import com.facebook.react.ReactActivity;
 import com.facebook.react.ReactActivityDelegate;
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint;
 import com.facebook.react.defaults.DefaultReactActivityDelegate;
+import com.zelfscannerv2.kiosk.KioskController;
 
 public class MainActivity extends ReactActivity {
+
+  private KioskController kioskController;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -44,6 +47,28 @@ public class MainActivity extends ReactActivity {
                 | WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
                 | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
                 | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+    kioskController = new KioskController(this);
+    applyUiLock();
+  }
+
+  // Reflection here (not `new UiLockManager(this)`) for the same reason as ImagerPackage's
+  // SignatureModule load: UiLockManager implements Zebra's EMDKManager.EMDKListener, and a
+  // hard reference to it would fail class verification of MainActivity itself on a device
+  // without EMDK (emulator, non-Zebra hardware), before this try/catch ever ran.
+  private void applyUiLock() {
+    try {
+      Class<?> cls = Class.forName("com.zelfscannerv2.kiosk.UiLockManager");
+      Object manager = cls.getConstructor(Context.class).newInstance(this);
+      cls.getMethod("apply").invoke(manager);
+    } catch (Throwable t) {
+      android.util.Log.w("MainActivity", "UiLockManager unavailable (no EMDK on this device): " + t);
+    }
+  }
+
+  @Override
+  protected void onResume() {
+    super.onResume();
+    kioskController.maybeEnterLockTask();
   }
 
   /** Force the soft keyboard down if anything pulled it up. */

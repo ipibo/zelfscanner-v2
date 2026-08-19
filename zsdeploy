@@ -616,6 +616,35 @@ cmd_restart(){
   exit $?
 }
 
+shutdown_targets(){
+  local model_filter="${1:-}"
+
+  list_targets "$model_filter"
+  report_skipped
+  [ "${#T_SERIAL[@]}" -eq 0 ] && { err "geen devices gevonden."; return 1; }
+
+  local i serial rc=0
+  for i in "${!T_SERIAL[@]}"; do
+    serial="${T_SERIAL[$i]}"
+    if adb -s "$serial" shell reboot -p </dev/null >/dev/null 2>&1; then
+      ok "[${T_NAME[$i]}] uitgezet — weer aan: fysieke powerknop"
+    else
+      err "[${T_NAME[$i]}] uitzetten gefaald"; rc=1
+    fi
+  done
+  return "$rc"
+}
+
+cmd_shutdown(){
+  local model_filter=""
+  while [ $# -gt 0 ]; do
+    case "$1" in --model) shift; model_filter="${1:-}" ;; *) err "onbekende optie: $1"; exit 1 ;; esac
+    shift
+  done
+  shutdown_targets "$model_filter"
+  exit $?
+}
+
 # ============================================================
 # usage + dispatch
 # ============================================================
@@ -631,6 +660,7 @@ gebruik:
   $SCRIPT_NAME status                 versie + bestandscount per device, vlagt afwijkingen
   $SCRIPT_NAME install <apk>          adb install -r naar alle (gefilterde) devices
   $SCRIPT_NAME restart                force-stop + relaunch app (\$ZS_APP_ID)
+  $SCRIPT_NAME shutdown               zet device(s) uit (adb reboot -p) — weer aan: powerknop
 
 opties (waar van toepassing):
   --model <substr>     filter op ro.product.model (bv. MC18, PS20)
@@ -663,6 +693,7 @@ main(){
     status) cmd_status "$@" ;;
     install) cmd_install "$@" ;;
     restart) cmd_restart "$@" ;;
+    shutdown) cmd_shutdown "$@" ;;
     -h|--help|help|"") usage ;;
     *) err "onbekend subcommando: $cmd"; usage; exit 1 ;;
   esac

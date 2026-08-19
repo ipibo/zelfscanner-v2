@@ -13,7 +13,21 @@ public class ImagerPackage implements ReactPackage {
   @Override
   public List<NativeModule> createNativeModules(ReactApplicationContext context) {
     List<NativeModule> modules = new ArrayList<>();
-    modules.add(new SignatureModule(context));
+    // Reflection here (instead of `new SignatureModule(context)`) keeps this
+    // class's own verification from hard-referencing SignatureModule, which
+    // implements Zebra's EMDKManager.EMDKListener. On a device without EMDK
+    // (emulator, non-Zebra hardware) that reference would otherwise fail
+    // class verification of ImagerPackage itself, before this try/catch ever
+    // runs.
+    try {
+      Class<?> cls = Class.forName("com.zelfscannerv2.imager.SignatureModule");
+      NativeModule module = (NativeModule) cls
+          .getConstructor(ReactApplicationContext.class)
+          .newInstance(context);
+      modules.add(module);
+    } catch (Throwable t) {
+      android.util.Log.w("ImagerPackage", "SignatureModule unavailable (no EMDK on this device): " + t);
+    }
     return modules;
   }
 
