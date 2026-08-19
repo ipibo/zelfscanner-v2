@@ -47,8 +47,16 @@ public class UiLockManager implements EMDKManager.EMDKListener, ProfileManager.D
   // and at 7.1: HomeKeyUsage and NotificationPullDown validate clean, RecentAppButtonUsage needs
   // 7.2+ ("This feature is not supported below MX-OSx 7.2" -- confirmed via processProfile's
   // CHECK_XML per-parm errors on mc1, 2026-08-19), and StatusBarUsage errors as "Param type is
-  // not supported" for reasons still unclear. Recents/multitask blocking needs a different
-  // mechanism on this hardware -- Access Manager CSP is the next thing to try.
+  // not supported" for reasons still unclear. Recents/multitask blocking still has no working
+  // fix on this hardware.
+  //
+  // AccessMgr / SystemSettings=3 ("None") blocks the whole Settings app -- added because the
+  // "swipe up -> black screen" fix (Settings > Security > Screen lock > None, done by hand on
+  // mc1) is trivially undone by anyone who can still reach Settings: with Recents still open,
+  // that's anyone with physical access. This closes that specific hole even though Recents
+  // itself stays reachable. Recovery if this ever needs reversing: reinstall over adb with
+  // SystemSettings=1 in this profile (or push a fresh profile) -- adb/EMDK access doesn't go
+  // through the Settings app, so this can't lock out adb-based recovery.
   private static final String PROFILE_NAME = "KioskUiLock";
   private static final String LOCK_PROFILE_XML =
       "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
@@ -58,6 +66,10 @@ public class UiLockManager implements EMDKManager.EMDKListener, ProfileManager.D
           + "<parm name=\"emdk_name\" value=\"ui1\"/>"
           + "<parm name=\"HomeKeyUsage\" value=\"2\"/>"
           + "<parm name=\"NotificationPullDown\" value=\"2\"/>"
+          + "</characteristic>"
+          + "<characteristic type=\"AccessMgr\" version=\"4.4\">"
+          + "<parm name=\"emdk_name\" value=\"access1\"/>"
+          + "<parm name=\"SystemSettings\" value=\"2\"/>"
           + "</characteristic>"
           + "</characteristic>";
 
