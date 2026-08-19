@@ -14,7 +14,6 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   BackHandler,
-  Image,
   StatusBar,
   StyleSheet,
   Text,
@@ -25,10 +24,12 @@ import {
 } from 'react-native';
 import WebView from 'react-native-webview';
 import {Cradle} from './src/cradle';
-import {Imager} from './src/imager';
 import {startAgent} from './src/agent';
 
 const UNLOCK_SECONDS = 10; // firmware-valid 10–30
+
+// false = production/demo: pure content-pack flow, no HUD, no debug buttons.
+const SHOW_DEBUG_INFO = false;
 
 // Content-pack: lives on the filesystem, NOT in the APK. Pushed via adb.
 // Not require()'d — that would bundle it into the build and defeat the point.
@@ -47,9 +48,6 @@ function App(): React.JSX.Element {
   const [agentStatus, setAgentStatus] = useState('starting…');
   const [docked, setDocked] = useState<boolean | null>(null);
   const [unlockMsg, setUnlockMsg] = useState('—');
-  const [shot, setShot] = useState<string | null>(null);
-  const [shotMsg, setShotMsg] = useState('—');
-  const lastB64 = useRef<string | null>(null);
 
   // Report to the dashboard + accept remote unlock commands.
   useEffect(() => {
@@ -105,29 +103,6 @@ function App(): React.JSX.Element {
     },
     [unlockLocal],
   );
-
-  // Experiment: pull an image out of the SE2100 imager via signature capture.
-  const captureShot = useCallback(() => {
-    setShot(null);
-    setShotMsg('armed — pull the scan trigger…');
-    Imager.capture(640, 480)
-      .then(r => {
-        lastB64.current = r.base64;
-        setShot(`data:image/jpeg;base64,${r.base64}`);
-        setShotMsg(`got ${r.bytes} B (${r.width}×${r.height})`);
-      })
-      .catch(e => setShotMsg(`FAIL: ${e?.code ?? ''} ${e?.message ?? e}`));
-  }, []);
-
-  const saveShot = useCallback(() => {
-    if (!lastB64.current) {
-      return;
-    }
-    setShotMsg('saving…');
-    Imager.save(lastB64.current)
-      .then(name => setShotMsg(`saved → Pictures/Zelfscanner/${name}`))
-      .catch(e => setShotMsg(`SAVE FAIL: ${e?.message ?? e}`));
-  }, []);
 
   const commit = useCallback(() => {
     if (timerRef.current) {
@@ -205,45 +180,26 @@ function App(): React.JSX.Element {
         />
 
         {/* Overlay HUD */}
-        <View style={styles.hud} pointerEvents="none">
-          <Text style={styles.label}>PACK</Text>
-          <Text style={styles.value}>{packStatus}</Text>
-          <Text style={styles.label}>LAST BARCODE</Text>
-          <Text style={styles.scan}>{lastScan}</Text>
-          <Text style={styles.label}>SCANS</Text>
-          <Text style={styles.value}>{count}</Text>
-          <Text style={styles.label}>TYPING (live)</Text>
-          <Text style={styles.typing}>{buffer || '—'}</Text>
-          <Text style={styles.label}>DASHBOARD</Text>
-          <Text style={styles.value}>{agentStatus}</Text>
-          <Text style={styles.label}>CRADLE</Text>
-          <Text style={styles.value}>
-            {docked === null ? '—' : docked ? 'docked' : 'undocked'}
-          </Text>
-          <Text style={styles.label}>UNLOCK</Text>
-          <Text style={styles.typing}>{unlockMsg}</Text>
-          <Text style={styles.label}>SCANNER EYE</Text>
-          <Text style={styles.typing}>{shotMsg}</Text>
-        </View>
-
-        {/* What the imager saw, if signature capture returned a frame. */}
-        {shot && (
-          <>
-            <Image
-              source={{uri: shot}}
-              style={styles.shot}
-              resizeMode="contain"
-            />
-            <TouchableOpacity style={styles.saveBtn} onPress={saveShot}>
-              <Text style={styles.saveBtnText}>SAVE</Text>
-            </TouchableOpacity>
-          </>
+        {SHOW_DEBUG_INFO && (
+          <View style={styles.hud} pointerEvents="none">
+            <Text style={styles.label}>PACK</Text>
+            <Text style={styles.value}>{packStatus}</Text>
+            <Text style={styles.label}>LAST BARCODE</Text>
+            <Text style={styles.scan}>{lastScan}</Text>
+            <Text style={styles.label}>SCANS</Text>
+            <Text style={styles.value}>{count}</Text>
+            <Text style={styles.label}>TYPING (live)</Text>
+            <Text style={styles.typing}>{buffer || '—'}</Text>
+            <Text style={styles.label}>DASHBOARD</Text>
+            <Text style={styles.value}>{agentStatus}</Text>
+            <Text style={styles.label}>CRADLE</Text>
+            <Text style={styles.value}>
+              {docked === null ? '—' : docked ? 'docked' : 'undocked'}
+            </Text>
+            <Text style={styles.label}>UNLOCK</Text>
+            <Text style={styles.typing}>{unlockMsg}</Text>
+          </View>
         )}
-
-        {/* Trigger a signature-capture frame from the SE2100 imager. */}
-        <TouchableOpacity style={styles.shotBtn} onPress={captureShot}>
-          <Text style={styles.unlockBtnText}>SCANNER EYE</Text>
-        </TouchableOpacity>
 
         {/* Manual local unlock — only meaningful while docked, so hide it otherwise. */}
         {docked === true && (
@@ -304,40 +260,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     backgroundColor: '#1e88e5',
     borderRadius: 10,
-  },
-  shotBtn: {
-    position: 'absolute',
-    bottom: 24,
-    left: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    backgroundColor: '#8e24aa',
-    borderRadius: 10,
-  },
-  shot: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    width: 200,
-    height: 150,
-    borderWidth: 2,
-    borderColor: '#8e24aa',
-    backgroundColor: '#000',
-  },
-  saveBtn: {
-    position: 'absolute',
-    top: 170,
-    right: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    backgroundColor: '#43a047',
-    borderRadius: 8,
-  },
-  saveBtnText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 1,
   },
   unlockBtnText: {
     color: '#fff',
