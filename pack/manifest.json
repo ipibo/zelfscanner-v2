@@ -1,20 +1,15 @@
 {
-  "version": 1,
+  "version": "1",
   "scenes": [
     {
-      "id": "intro",
-      "video": "assets/test.mp4",
-      "expectScan": "1111111111111"
+      "id": "scene1",
+      "expectScan": "6340570880252",
+      "video": "assets/20260819_104000.mp4"
     },
     {
-      "id": "middle",
-      "video": "assets/test.mp4",
-      "expectScan": "2222222222222"
-    },
-    {
-      "id": "end",
-      "video": "assets/test.mp4",
-      "expectScan": null
+      "id": "scene2",
+      "expectScan": "5148193514961",
+      "video": "assets/test.mp4"
     }
   ]
 }

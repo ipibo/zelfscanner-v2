@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>zelfscanner — story editor</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: #111;
+        color: #eee;
+        font-family: sans-serif;
+      }
+      #layout {
+        display: flex;
+        height: 100%;
+      }
+
+      #scenes {
+        width: 220px;
+        background: #1c1c1c;
+        padding: 12px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+      }
+      #scenes h1 {
+        font-size: 13px;
+        margin: 0 0 10px;
+        color: #999;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      #scene-list {
+        flex: 1;
+        overflow-y: auto;
+      }
+      .scene-item {
+        padding: 8px 10px;
+        margin-bottom: 4px;
+        background: #262626;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+      }
+      .scene-item:hover {
+        background: #2e2e2e;
+      }
+      .scene-item.active {
+        background: #2a6;
+        color: #fff;
+      }
+      .scene-item .name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .scene-item .order-btns {
+        display: flex;
+        gap: 2px;
+        flex-shrink: 0;
+      }
+      .scene-item button {
+        background: transparent;
+        border: 0;
+        color: inherit;
+        opacity: 0.6;
+        cursor: pointer;
+        font-size: 12px;
+        padding: 2px 4px;
+      }
+      .scene-item button:hover {
+        opacity: 1;
+      }
+      #add-scene {
+        width: 100%;
+        padding: 8px;
+        margin-top: 8px;
+        background: #2a6;
+        color: #fff;
+        border: 0;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      #add-scene:active {
+        background: #194;
+      }
+
+      #form {
+        width: 340px;
+        background: #181818;
+        padding: 16px;
+        overflow-y: auto;
+        border-left: 1px solid #2a2a2a;
+        border-right: 1px solid #2a2a2a;
+      }
+      #form h1 {
+        font-size: 13px;
+        margin: 0 0 12px;
+        color: #999;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      #form label {
+        display: block;
+        font-size: 11px;
+        color: #999;
+        margin: 12px 0 4px;
+      }
+      #form input,
+      #form select,
+      #form textarea {
+        width: 100%;
+        padding: 7px 8px;
+        font-size: 13px;
+        background: #000;
+        color: #7cfc00;
+        border: 1px solid #444;
+        border-radius: 3px;
+        font-family: 'SF Mono', Menlo, monospace;
+      }
+      #form textarea {
+        min-height: 60px;
+        resize: vertical;
+        font-family: sans-serif;
+        color: #eee;
+      }
+      #form select {
+        color: #eee;
+      }
+      #form .hint {
+        font-size: 11px;
+        color: #777;
+        margin-top: 4px;
+        line-height: 1.4;
+      }
+      .upload-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 6px;
+      }
+      .upload-row input[type='file'] {
+        flex: 1;
+        font-size: 11px;
+        color: #aaa;
+        border: 0;
+        padding: 0;
+        background: transparent;
+      }
+      .upload-status {
+        font-size: 11px;
+        color: #999;
+      }
+      .upload-status.ok {
+        color: #7cfc00;
+      }
+      .upload-status.err {
+        color: #f77;
+      }
+      #delete-scene {
+        width: 100%;
+        padding: 8px;
+        margin-top: 20px;
+        background: #622;
+        color: #fca;
+        border: 0;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      #delete-scene:hover {
+        background: #733;
+      }
+      #empty-state {
+        color: #666;
+        font-size: 13px;
+        padding: 40px 0;
+        text-align: center;
+      }
+
+      #right {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      #topbar {
+        background: #1c1c1c;
+        padding: 10px 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-bottom: 1px solid #2a2a2a;
+      }
+      #topbar label {
+        font-size: 11px;
+        color: #999;
+      }
+      #version {
+        width: 90px;
+        padding: 5px 7px;
+        font-size: 12px;
+        background: #000;
+        color: #7cfc00;
+        border: 1px solid #444;
+        border-radius: 3px;
+        font-family: monospace;
+      }
+      #save {
+        padding: 8px 18px;
+        background: #2a6;
+        color: #fff;
+        border: 0;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      #save:active {
+        background: #194;
+      }
+      #barcodes,
+      #library {
+        padding: 8px 14px;
+        background: #444;
+        color: #eee;
+        border: 0;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      #barcodes:hover,
+      #library:hover {
+        background: #555;
+      }
+      #status {
+        font-size: 12px;
+        flex: 1;
+      }
+      #status.ok {
+        color: #7cfc00;
+      }
+      #status.err {
+        color: #f77;
+      }
+      #errors {
+        padding: 8px 16px;
+        background: #3a1414;
+        color: #fca;
+        font-size: 12px;
+        white-space: pre-wrap;
+        display: none;
+      }
+      #errors.show {
+        display: block;
+      }
+
+      #deploybar {
+        background: #1c1c1c;
+        padding: 10px 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-bottom: 1px solid #2a2a2a;
+        font-size: 12px;
+      }
+      #deploybar label {
+        font-size: 11px;
+        color: #999;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        white-space: nowrap;
+      }
+      #deploybar label input[type='checkbox'] {
+        width: auto;
+      }
+      #device-summary {
+        color: #999;
+        flex: 1;
+      }
+      #deploybar button {
+        padding: 7px 14px;
+        font-size: 12px;
+        background: #444;
+        color: #eee;
+        border: 0;
+        border-radius: 4px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      #deploybar button:hover {
+        background: #555;
+      }
+      #deploy {
+        background: #268;
+      }
+      #deploy:hover {
+        background: #379;
+      }
+      #deploy:disabled,
+      #refresh-devices:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      #deploy-log {
+        margin: 0;
+        padding: 8px 16px;
+        background: #0c0c0c;
+        color: #7cfc00;
+        font-size: 11px;
+        font-family: monospace;
+        white-space: pre-wrap;
+        display: none;
+        max-height: 160px;
+        overflow-y: auto;
+      }
+      #deploy-log.show {
+        display: block;
+      }
+
+      #frame-wrap {
+        flex: 1;
+        background: #000;
+        position: relative;
+      }
+      iframe {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        display: block;
+      }
+
+      #simbar {
+        background: #1c1c1c;
+        padding: 10px 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-top: 1px solid #2a2a2a;
+      }
+      #simbar label {
+        font-size: 11px;
+        color: #999;
+      }
+      #simbar input {
+        width: 160px;
+        padding: 6px 8px;
+        font-size: 13px;
+        background: #000;
+        color: #7cfc00;
+        border: 1px solid #444;
+        border-radius: 3px;
+        font-family: monospace;
+      }
+      #simbar button {
+        padding: 7px 14px;
+        font-size: 12px;
+        background: #444;
+        color: #eee;
+        border: 0;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      #simbar button:hover {
+        background: #555;
+      }
+      #simlog {
+        font-size: 11px;
+        color: #7cfc00;
+        font-family: monospace;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="layout">
+      <div id="scenes">
+        <h1>Scenes</h1>
+        <div id="scene-list"></div>
+        <button id="add-scene">+ scene toevoegen</button>
+      </div>
+
+      <div id="form"></div>
+
+      <div id="right">
+        <div id="topbar">
+          <label for="version">versie</label>
+          <input id="version" type="text" value="0.1.0" />
+          <div id="status"></div>
+          <button id="library" type="button">Bestanden</button>
+          <button id="barcodes" type="button">Barcodes (PDF)</button>
+          <button id="save">Opslaan</button>
+        </div>
+        <div id="deploybar">
+          <button id="refresh-devices">Ververs devices</button>
+          <div id="device-summary">devices nog niet opgehaald</div>
+          <label><input type="checkbox" id="restart-app" /> herstart app na push</label>
+          <button id="deploy">Push naar scanners</button>
+        </div>
+        <pre id="deploy-log"></pre>
+        <div id="errors"></div>
+        <div id="frame-wrap">
+          <iframe id="pack-frame" src="../pack/index.html"></iframe>
+        </div>
+        <div id="simbar">
+          <label for="code">test-scan</label>
+          <input
+            id="code"
+            type="text"
+            placeholder="bv. 8712345678901"
+            autocomplete="off" />
+          <button id="scan">Scan</button>
+          <button id="reload">Herlaad preview</button>
+          <div id="simlog"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        var manifest = {version: '0.1.0', scenes: []};
+        var assets = {video: [], audio: [], image: []};
+        var activeIndex = -1;
+        // Explicit mode per scene, independent of whether video/image is
+        // filled in yet -- deriving mode purely from field presence broke
+        // switching back to "Video" once its field was empty (fell through
+        // to "image" every render since scene.video was falsy).
+        var sceneMode = new WeakMap();
+
+        var sceneListEl = document.getElementById('scene-list');
+        var formEl = document.getElementById('form');
+        var versionEl = document.getElementById('version');
+        var statusEl = document.getElementById('status');
+        var errorsEl = document.getElementById('errors');
+        var frame = document.getElementById('pack-frame');
+        var simlog = document.getElementById('simlog');
+
+        function setStatus(msg, isErr) {
+          statusEl.textContent = msg;
+          statusEl.className = isErr ? 'err' : 'ok';
+        }
+
+        function log(msg) {
+          simlog.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+        }
+
+        function reloadFrame() {
+          frame.src = '../pack/index.html?_=' + Date.now();
+        }
+
+        // Jump the live preview to whichever scene is selected in the list
+        // (via runtime.js's window.__gotoScene, see pack/runtime.js) instead
+        // of leaving it wherever it happened to be.
+        function syncPreviewToActiveScene() {
+          var scene = manifest.scenes[activeIndex];
+          if (!scene) return;
+          var win = frame.contentWindow;
+          if (win && typeof win.__gotoScene === 'function') {
+            win.__gotoScene(scene.id);
+          }
+        }
+        frame.addEventListener('load', syncPreviewToActiveScene);
+
+        // ---- data loading ----
+
+        function loadManifest() {
+          return fetch('/api/manifest')
+            .then(function (r) {
+              return r.json();
+            })
+            .then(function (data) {
+              if (data && data.scenes) {
+                manifest = data;
+              }
+              activeIndex = manifest.scenes.length ? 0 : -1;
+              versionEl.value = manifest.version || '0.1.0';
+              renderAll();
+            })
+            .catch(function (e) {
+              setStatus('manifest laden mislukt: ' + e.message, true);
+            });
+        }
+
+        function loadAssets() {
+          return fetch('/api/assets')
+            .then(function (r) {
+              return r.json();
+            })
+            .then(function (data) {
+              assets = data;
+            })
+            .catch(function () {
+              /* dropdowns just show free-text fallback */
+            });
+        }
+
+        // ---- rendering: scene list ----
+
+        function renderSceneList() {
+          sceneListEl.innerHTML = '';
+          manifest.scenes.forEach(function (scene, i) {
+            var item = document.createElement('div');
+            item.className =
+              'scene-item' + (i === activeIndex ? ' active' : '');
+
+            var name = document.createElement('span');
+            name.className = 'name';
+            name.textContent = scene.id || '(zonder id)';
+            item.appendChild(name);
+
+            var btns = document.createElement('span');
+            btns.className = 'order-btns';
+
+            var up = document.createElement('button');
+            up.textContent = '↑';
+            up.title = 'naar boven';
+            up.onclick = function (e) {
+              e.stopPropagation();
+              moveScene(i, -1);
+            };
+            btns.appendChild(up);
+
+            var down = document.createElement('button');
+            down.textContent = '↓';
+            down.title = 'naar beneden';
+            down.onclick = function (e) {
+              e.stopPropagation();
+              moveScene(i, 1);
+            };
+            btns.appendChild(down);
+
+            item.appendChild(btns);
+            item.onclick = function () {
+              activeIndex = i;
+              renderAll();
+              syncPreviewToActiveScene();
+            };
+            sceneListEl.appendChild(item);
+          });
+        }
+
+        function moveScene(i, dir) {
+          var j = i + dir;
+          if (j < 0 || j >= manifest.scenes.length) return;
+          var tmp = manifest.scenes[i];
+          manifest.scenes[i] = manifest.scenes[j];
+          manifest.scenes[j] = tmp;
+          if (activeIndex === i) activeIndex = j;
+          else if (activeIndex === j) activeIndex = i;
+          renderAll();
+        }
+
+        // ---- rendering: form ----
+
+        // Real <select> instead of a text-input+datalist: always shows
+        // exactly what's on disk right now (datalist suggestions were easy
+        // to miss / inconsistent across browsers). Keeps the current value
+        // as an extra option even if it's not in the list, so switching
+        // scenes never silently blanks an existing reference.
+        function assetPicker(kind, currentValue, onChange) {
+          var select = document.createElement('select');
+          var blank = document.createElement('option');
+          blank.value = '';
+          blank.textContent = '— kies bestand —';
+          select.appendChild(blank);
+
+          var list = assets[kind] || [];
+          var seen = {};
+          list.forEach(function (v) {
+            seen[v] = true;
+            var opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = v;
+            select.appendChild(opt);
+          });
+          if (currentValue && !seen[currentValue]) {
+            var missing = document.createElement('option');
+            missing.value = currentValue;
+            missing.textContent = currentValue + ' (niet gevonden op disk)';
+            select.appendChild(missing);
+          }
+          select.value = currentValue || '';
+          select.onchange = function () {
+            onChange(select.value || undefined);
+          };
+          return select;
+        }
+
+        function uploadRow(kind, onUploaded) {
+          var wrap = document.createElement('div');
+          wrap.className = 'upload-row';
+
+          var fileInput = document.createElement('input');
+          fileInput.type = 'file';
+          fileInput.accept =
+            kind === 'video' ? 'video/*' : kind === 'image' ? 'image/*' : 'audio/*';
+
+          var status = document.createElement('span');
+          status.className = 'upload-status';
+
+          fileInput.onchange = function () {
+            var file = fileInput.files[0];
+            if (!file) return;
+            status.textContent = 'uploaden…';
+            status.className = 'upload-status';
+            fetch(
+              '/api/upload?kind=' + kind + '&name=' + encodeURIComponent(file.name),
+              {method: 'POST', body: file},
+            )
+              .then(function (r) {
+                return r.json().then(function (data) {
+                  return {ok: r.ok, data: data};
+                });
+              })
+              .then(function (res) {
+                if (res.data.ok) {
+                  status.textContent =
+                    '✓ ' +
+                    res.data.path +
+                    (res.data.deduped ? ' (al aanwezig)' : '') +
+                    (res.data.normalized ? ' (rotatie/codec gefixt)' : '');
+                  status.className = 'upload-status ok';
+                  onUploaded(res.data.path);
+                } else {
+                  status.textContent = res.data.error || 'upload mislukt';
+                  status.className = 'upload-status err';
+                }
+              })
+              .catch(function (e) {
+                status.textContent = 'upload mislukt: ' + e.message;
+                status.className = 'upload-status err';
+              })
+              .finally(function () {
+                fileInput.value = '';
+              });
+          };
+
+          wrap.appendChild(fileInput);
+          wrap.appendChild(status);
+          return wrap;
+        }
+
+        function field(labelText, input, hint) {
+          var wrap = document.createDocumentFragment();
+          var label = document.createElement('label');
+          label.textContent = labelText;
+          wrap.appendChild(label);
+          wrap.appendChild(input);
+          if (hint) {
+            var h = document.createElement('div');
+            h.className = 'hint';
+            h.textContent = hint;
+            wrap.appendChild(h);
+          }
+          return wrap;
+        }
+
+        function renderForm() {
+          formEl.innerHTML = '';
+          var scene = manifest.scenes[activeIndex];
+          if (!scene) {
+            formEl.innerHTML =
+              '<div id="empty-state">geen scene geselecteerd</div>';
+            return;
+          }
+
+          var h1 = document.createElement('h1');
+          h1.textContent = 'Scene';
+          formEl.appendChild(h1);
+
+          // id
+          var idInput = document.createElement('input');
+          idInput.value = scene.id || '';
+          idInput.oninput = function () {
+            scene.id = idInput.value;
+            renderSceneList();
+          };
+          formEl.appendChild(field('id', idInput));
+
+          // type: video XOR (image + audio) -- never combined, see runtime.js
+          var mode = sceneMode.has(scene)
+            ? sceneMode.get(scene)
+            : scene.video
+              ? 'video'
+              : 'image';
+
+          function afterAssetChange() {
+            loadAssets().then(renderForm);
+          }
+
+          function modeRadio(value, labelText) {
+            var lbl = document.createElement('label');
+            lbl.style.cssText =
+              'display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#ccc;margin:0 16px 0 0;text-transform:none;letter-spacing:normal;';
+            var r = document.createElement('input');
+            r.type = 'radio';
+            r.name = 'scene-mode';
+            r.value = value;
+            r.style.cssText = 'width:auto;margin:0;';
+            r.checked = mode === value;
+            r.onchange = function () {
+              sceneMode.set(scene, value);
+              if (value === 'video') {
+                scene.image = undefined;
+                scene.audio = undefined;
+              } else {
+                scene.video = undefined;
+              }
+              renderForm();
+            };
+            lbl.appendChild(r);
+            lbl.appendChild(document.createTextNode(labelText));
+            return lbl;
+          }
+
+          var modeWrap = document.createElement('div');
+          modeWrap.style.cssText = 'display:flex;margin-top:2px;';
+          modeWrap.appendChild(modeRadio('video', 'Video'));
+          modeWrap.appendChild(modeRadio('image', 'Afbeelding + audio'));
+          formEl.appendChild(field('type', modeWrap));
+
+          if (mode === 'video') {
+            var videoSelect = assetPicker('video', scene.video, function (v) {
+              scene.video = v;
+            });
+            formEl.appendChild(field('video', videoSelect));
+            formEl.appendChild(
+              uploadRow('video', function (path) {
+                scene.video = path;
+                afterAssetChange();
+              }),
+            );
+          } else {
+            var imageSelect = assetPicker('image', scene.image, function (v) {
+              scene.image = v;
+            });
+            formEl.appendChild(field('afbeelding', imageSelect));
+            formEl.appendChild(
+              uploadRow('image', function (path) {
+                scene.image = path;
+                afterAssetChange();
+              }),
+            );
+
+            var audioSelect = assetPicker('audio', scene.audio, function (v) {
+              scene.audio = v;
+            });
+            formEl.appendChild(field('audio (narratie)', audioSelect));
+            formEl.appendChild(
+              uploadRow('audio', function (path) {
+                scene.audio = path;
+                afterAssetChange();
+              }),
+            );
+          }
+
+          // text
+          var textInput = document.createElement('textarea');
+          textInput.value = scene.text || '';
+          textInput.oninput = function () {
+            scene.text = textInput.value || undefined;
+          };
+          formEl.appendChild(field('tekst (ondertitel)', textInput));
+
+          // expectScan
+          var scanRow = document.createElement('div');
+          scanRow.style.cssText = 'display:flex;gap:6px;';
+          var scanInput = document.createElement('input');
+          scanInput.value = scene.expectScan || '';
+          scanInput.placeholder = '8712345670012';
+          scanInput.style.flex = '1';
+          scanInput.oninput = function () {
+            scene.expectScan = scanInput.value || null;
+          };
+          var genBtn = document.createElement('button');
+          genBtn.type = 'button';
+          genBtn.textContent = 'genereer';
+          genBtn.title = 'willekeurige unieke barcode invullen';
+          genBtn.style.cssText =
+            'padding:0 12px;font-size:11px;background:#444;color:#eee;border:0;border-radius:3px;cursor:pointer;white-space:nowrap;';
+          genBtn.onclick = function () {
+            var used = {};
+            manifest.scenes.forEach(function (s) {
+              if (s !== scene && s.expectScan) used[s.expectScan] = true;
+            });
+            var code;
+            do {
+              code = '';
+              for (var i = 0; i < 13; i++) code += Math.floor(Math.random() * 10);
+            } while (used[code]);
+            scanInput.value = code;
+            scene.expectScan = code;
+          };
+          scanRow.appendChild(scanInput);
+          scanRow.appendChild(genBtn);
+          formEl.appendChild(
+            field('verwachte scan (8-14 cijfers, leeg = eindscene)', scanRow),
+          );
+
+          // next
+          var nextSelect = document.createElement('select');
+          var blankOpt = document.createElement('option');
+          blankOpt.value = '';
+          blankOpt.textContent = '(volgende in lijst)';
+          nextSelect.appendChild(blankOpt);
+          manifest.scenes.forEach(function (s) {
+            if (s === scene) return;
+            var opt = document.createElement('option');
+            opt.value = s.id;
+            opt.textContent = s.id;
+            if (scene.next === s.id) opt.selected = true;
+            nextSelect.appendChild(opt);
+          });
+          nextSelect.onchange = function () {
+            scene.next = nextSelect.value || undefined;
+          };
+          formEl.appendChild(
+            field('volgende scene bij juiste scan', nextSelect),
+          );
+
+          var del = document.createElement('button');
+          del.id = 'delete-scene';
+          del.textContent = 'Scene verwijderen';
+          del.onclick = function () {
+            manifest.scenes.splice(activeIndex, 1);
+            activeIndex = Math.min(activeIndex, manifest.scenes.length - 1);
+            renderAll();
+          };
+          formEl.appendChild(del);
+        }
+
+        function renderAll() {
+          renderSceneList();
+          renderForm();
+        }
+
+        // ---- add scene ----
+
+        document.getElementById('add-scene').onclick = function () {
+          var n = manifest.scenes.length + 1;
+          var id = 'scene' + n;
+          while (
+            manifest.scenes.some(function (s) {
+              return s.id === id;
+            })
+          ) {
+            n++;
+            id = 'scene' + n;
+          }
+          var newScene = {id: id, expectScan: null};
+          sceneMode.set(newScene, 'video');
+          manifest.scenes.push(newScene);
+          activeIndex = manifest.scenes.length - 1;
+          renderAll();
+        };
+
+        document.getElementById('barcodes').onclick = function () {
+          window.open('barcodes.html', '_blank');
+        };
+        document.getElementById('library').onclick = function () {
+          window.open('library.html', '_blank');
+        };
+
+        // ---- save ----
+
+        document.getElementById('save').onclick = function () {
+          manifest.version = versionEl.value || '0.1.0';
+          errorsEl.classList.remove('show');
+          setStatus('opslaan…');
+          fetch('/api/manifest', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(manifest),
+          })
+            .then(function (r) {
+              return r.json().then(function (data) {
+                return {ok: r.ok, data: data};
+              });
+            })
+            .then(function (res) {
+              if (res.data.ok) {
+                setStatus(
+                  'opgeslagen ✓ (' + new Date().toLocaleTimeString() + ')',
+                );
+                reloadFrame();
+              } else {
+                setStatus(
+                  (res.data.errors || []).length +
+                    ' fout(en) — niet opgeslagen',
+                  true,
+                );
+                errorsEl.textContent = (res.data.errors || []).join('\n');
+                errorsEl.classList.add('show');
+              }
+            })
+            .catch(function (e) {
+              setStatus('opslaan mislukt: ' + e.message, true);
+            });
+        };
+
+        // ---- preview scan simulator ----
+
+        document.getElementById('scan').onclick = function () {
+          var code = document.getElementById('code').value.trim();
+          if (!code) return;
+          var win = frame.contentWindow;
+          if (!win || typeof win.onNativeScan !== 'function') {
+            log('preview nog niet geladen (of onNativeScan ontbreekt)');
+            return;
+          }
+          win.onNativeScan(code);
+          log('scan verstuurd: ' + code);
+        };
+        document
+          .getElementById('code')
+          .addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') document.getElementById('scan').click();
+          });
+        document.getElementById('reload').onclick = function () {
+          reloadFrame();
+          log('preview herladen');
+        };
+
+        // ---- devices / adb push ----
+
+        var deployLogEl = document.getElementById('deploy-log');
+        var deviceSummaryEl = document.getElementById('device-summary');
+
+        function showDeployLog(text) {
+          deployLogEl.textContent = text;
+          deployLogEl.classList.add('show');
+        }
+
+        function refreshDevices() {
+          var btn = document.getElementById('refresh-devices');
+          btn.disabled = true;
+          deviceSummaryEl.textContent = 'devices ophalen…';
+          return fetch('/api/devices')
+            .then(function (r) {
+              return r.json();
+            })
+            .then(function (data) {
+              showDeployLog(data.output || '(geen output)');
+              var lines = (data.output || '').split('\n').filter(function (l) {
+                return l.trim() && !/^SERIAL|^devices\b/.test(l);
+              });
+              deviceSummaryEl.textContent = lines.length + ' device(s) gevonden';
+            })
+            .catch(function (e) {
+              deviceSummaryEl.textContent = 'devices ophalen mislukt: ' + e.message;
+            })
+            .finally(function () {
+              btn.disabled = false;
+            });
+        }
+        document.getElementById('refresh-devices').onclick = refreshDevices;
+
+        document.getElementById('deploy').onclick = function () {
+          var btn = this;
+          btn.disabled = true;
+          btn.textContent = 'bezig…';
+          showDeployLog('push gestart…');
+          fetch('/api/deploy', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              restart: document.getElementById('restart-app').checked,
+            }),
+          })
+            .then(function (r) {
+              return r.json();
+            })
+            .then(function (data) {
+              showDeployLog(data.output || '(geen output)');
+            })
+            .catch(function (e) {
+              showDeployLog('push mislukt: ' + e.message);
+            })
+            .finally(function () {
+              btn.disabled = false;
+              btn.textContent = 'Push naar scanners';
+            });
+        };
+
+        refreshDevices();
+        Promise.all([loadManifest(), loadAssets()]);
+      })();
+    </script>
+  </body>
+</html>

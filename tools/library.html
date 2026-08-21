@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>zelfscanner — bestanden</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #111;
+        color: #eee;
+        font-family: sans-serif;
+      }
+      #bar {
+        position: sticky;
+        top: 0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 20px;
+        background: #1c1c1c;
+        border-bottom: 1px solid #2a2a2a;
+        z-index: 1;
+      }
+      #bar h1 {
+        font-size: 14px;
+        margin: 0;
+        flex: 1;
+        color: #999;
+        font-weight: normal;
+      }
+      #status {
+        font-size: 12px;
+        color: #f77;
+      }
+      section {
+        padding: 8px 20px 24px;
+      }
+      section h2 {
+        font-size: 12px;
+        color: #999;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin: 20px 0 10px;
+      }
+      #grid-video,
+      #grid-image,
+      #grid-audio {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 14px;
+      }
+      .card {
+        background: #1c1c1c;
+        border: 1px solid #2a2a2a;
+        border-radius: 6px;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .card .preview {
+        background: #000;
+        border-radius: 4px;
+        overflow: hidden;
+        aspect-ratio: 16 / 10;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .card .preview img,
+      .card .preview video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .card .preview audio {
+        width: 100%;
+      }
+      .card .name {
+        font-size: 12px;
+        font-family: 'SF Mono', Menlo, monospace;
+        word-break: break-all;
+      }
+      .card .meta {
+        font-size: 11px;
+        color: #888;
+      }
+      .card .used-by {
+        font-size: 11px;
+        padding: 3px 6px;
+        border-radius: 3px;
+        display: inline-block;
+        width: fit-content;
+      }
+      .card .used-by.in-use {
+        background: #143;
+        color: #7cfc00;
+      }
+      .card .used-by.unused {
+        background: #333;
+        color: #999;
+      }
+      .card .row {
+        display: flex;
+        gap: 6px;
+      }
+      .card button {
+        flex: 1;
+        padding: 6px 10px;
+        font-size: 11px;
+        background: #622;
+        color: #fca;
+        border: 0;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .card button:hover {
+        background: #733;
+      }
+      .card button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      #empty {
+        padding: 40px 20px;
+        color: #999;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="bar">
+      <h1>Bestanden in pack/assets/ — welke gebruikt worden en welke niet</h1>
+      <div id="status"></div>
+    </div>
+
+    <section>
+      <h2>Video</h2>
+      <div id="grid-video"></div>
+    </section>
+    <section>
+      <h2>Afbeeldingen</h2>
+      <div id="grid-image"></div>
+    </section>
+    <section>
+      <h2>Audio</h2>
+      <div id="grid-audio"></div>
+    </section>
+
+    <script>
+      (function () {
+        var statusEl = document.getElementById('status');
+        var grids = {
+          video: document.getElementById('grid-video'),
+          image: document.getElementById('grid-image'),
+          audio: document.getElementById('grid-audio'),
+        };
+
+        function formatSize(bytes) {
+          if (bytes < 1024) return bytes + ' B';
+          if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+          return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+        }
+
+        function buildUsage(manifest) {
+          var usage = {}; // path -> [sceneId, ...]
+          (manifest.scenes || []).forEach(function (scene) {
+            ['video', 'image', 'audio'].forEach(function (field) {
+              if (!scene[field]) return;
+              usage[scene[field]] = usage[scene[field]] || [];
+              usage[scene[field]].push(scene.id);
+            });
+          });
+          return usage;
+        }
+
+        function preview(file) {
+          var wrap = document.createElement('div');
+          wrap.className = 'preview';
+          var src = '../pack/' + file.path;
+          if (file.kind === 'image') {
+            var img = document.createElement('img');
+            img.src = src;
+            img.loading = 'lazy';
+            wrap.appendChild(img);
+          } else if (file.kind === 'video') {
+            var video = document.createElement('video');
+            video.src = src;
+            video.controls = true;
+            video.muted = true;
+            video.preload = 'metadata';
+            wrap.appendChild(video);
+          } else {
+            var audio = document.createElement('audio');
+            audio.src = src;
+            audio.controls = true;
+            wrap.appendChild(audio);
+          }
+          return wrap;
+        }
+
+        function render(files, usage) {
+          Object.keys(grids).forEach(function (kind) {
+            grids[kind].innerHTML = '';
+          });
+
+          if (files.length === 0) {
+            document.getElementById('grid-video').parentElement.insertAdjacentHTML(
+              'beforebegin',
+              '<div id="empty">geen bestanden in pack/assets/</div>',
+            );
+            return;
+          }
+
+          files.forEach(function (file) {
+            var usedBy = usage[file.path] || [];
+            var card = document.createElement('div');
+            card.className = 'card';
+
+            card.appendChild(preview(file));
+
+            var name = document.createElement('div');
+            name.className = 'name';
+            name.textContent = file.path;
+            card.appendChild(name);
+
+            var meta = document.createElement('div');
+            meta.className = 'meta';
+            meta.textContent = formatSize(file.size);
+            card.appendChild(meta);
+
+            var badge = document.createElement('div');
+            badge.className = 'used-by ' + (usedBy.length ? 'in-use' : 'unused');
+            badge.textContent = usedBy.length
+              ? 'gebruikt door: ' + usedBy.join(', ')
+              : 'ongebruikt';
+            card.appendChild(badge);
+
+            var row = document.createElement('div');
+            row.className = 'row';
+            var del = document.createElement('button');
+            del.textContent = 'Verwijderen';
+            del.onclick = function () {
+              var msg = usedBy.length
+                ? 'Let op: "' + file.path + '" wordt gebruikt door scene(s) ' +
+                  usedBy.join(', ') +
+                  '. Verwijderen breekt die scene(s) totdat je er in de editor ' +
+                  'een ander bestand aan koppelt.\n\nToch verwijderen?'
+                : 'Bestand "' + file.path + '" verwijderen?';
+              if (!confirm(msg)) return;
+              del.disabled = true;
+              del.textContent = 'bezig…';
+              fetch('/api/asset?path=' + encodeURIComponent(file.path), {method: 'DELETE'})
+                .then(function (r) {
+                  return r.json();
+                })
+                .then(function (data) {
+                  if (data.ok) {
+                    load();
+                  } else {
+                    statusEl.textContent = data.error || 'verwijderen mislukt';
+                    del.disabled = false;
+                    del.textContent = 'Verwijderen';
+                  }
+                })
+                .catch(function (e) {
+                  statusEl.textContent = 'verwijderen mislukt: ' + e.message;
+                  del.disabled = false;
+                  del.textContent = 'Verwijderen';
+                });
+            };
+            row.appendChild(del);
+            card.appendChild(row);
+
+            grids[file.kind].appendChild(card);
+          });
+        }
+
+        function load() {
+          statusEl.textContent = 'laden…';
+          Promise.all([
+            fetch('/api/library').then(function (r) {
+              return r.json();
+            }),
+            fetch('/api/manifest').then(function (r) {
+              return r.json();
+            }),
+          ])
+            .then(function (results) {
+              var files = results[0].files || [];
+              var usage = buildUsage(results[1] || {});
+              statusEl.textContent = '';
+              render(files, usage);
+            })
+            .catch(function (e) {
+              statusEl.textContent = 'laden mislukt: ' + e.message;
+            });
+        }
+
+        load();
+      })();
+    </script>
+  </body>
+</html>
