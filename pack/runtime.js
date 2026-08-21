@@ -7,6 +7,7 @@
  */
 (function () {
   var video = document.getElementById('player');
+  var photo = document.getElementById('photo');
   var narrator = document.getElementById('narrator');
   var errorEl = document.getElementById('error');
   var captionEl = document.getElementById('caption');
@@ -48,15 +49,32 @@
     sceneIndex = manifest.scenes.indexOf(scene);
     hideError();
 
+    // video and image are mutually exclusive per scene (enforced at authoring
+    // time by tools/preview-server.js validateManifest) -- video wins if a
+    // hand-edited manifest somehow sets both.
     if (scene.video) {
+      photo.style.display = 'none';
+      photo.removeAttribute('src');
       video.style.display = '';
       video.src = scene.video;
-      video.currentTime = 0;
+      // Old WebKit (Android 5.1 WebView) doesn't reliably pick up a new
+      // src on an existing <video> without an explicit load() -- without
+      // this the element can silently keep showing the previous scene's
+      // video. Confirmed on-device 2026-08-19.
+      video.load();
       safePlay(video, 'scene ' + scene.id + ' video');
+    } else if (scene.image) {
+      video.pause();
+      video.removeAttribute('src');
+      video.style.display = 'none';
+      photo.src = scene.image;
+      photo.style.display = '';
     } else {
       video.pause();
       video.removeAttribute('src');
       video.style.display = 'none';
+      photo.style.display = 'none';
+      photo.removeAttribute('src');
     }
 
     if (scene.audio) {
@@ -118,6 +136,13 @@
       showError();
       post('wrongScan', {expected: scene.expectScan, got: code});
     }
+  };
+
+  // Lets the desktop story editor (tools/editor.html) jump the live preview
+  // to whichever scene is selected in its scene list, bypassing the normal
+  // scan-match flow. Never called by the native app.
+  window.__gotoScene = function (id) {
+    if (manifest) loadScene(id);
   };
 
   function boot() {

@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <style>
   html, body { margin: 0; padding: 0; background: #000; height: 100%; overflow: hidden; }
-  video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+  video, img#photo { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+  img#photo { display: none; }
   #error {
     position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
     background: rgba(200, 0, 0, 0.85); color: #fff; font: bold 8vw sans-serif; text-align: center;
@@ -24,6 +25,7 @@
 </head>
 <body>
   <video id="player" autoplay loop muted playsinline></video>
+  <img id="photo" alt="">
   <audio id="narrator"></audio>
   <div id="error"></div>
   <div id="caption"></div>
