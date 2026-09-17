@@ -19,7 +19,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import WebView from 'react-native-webview';
@@ -146,71 +145,72 @@ function App(): React.JSX.Element {
     [commit],
   );
 
+  // Tap anywhere refocuses the hidden scanner input -- via a plain bubbling
+  // onTouchEnd, NOT a Touchable. A Touchable makes this View the JS responder,
+  // and then RN's JSResponderHandler intercepts every following MOVE: the
+  // WebView gets ACTION_CANCEL (touchcancel ~40ms in) and dragging in the pack
+  // (puzzle) dies. Measured on the MC18N0 2026-09-17.
   return (
-    <TouchableWithoutFeedback onPress={focusInput}>
-      <View style={styles.root}>
-        <StatusBar hidden />
-        <WebView
-          ref={webviewRef}
-          source={{uri: PACK_URL}}
-          style={StyleSheet.absoluteFill}
-          originWhitelist={['*']}
-          allowFileAccess
-          allowFileAccessFromFileURLs
-          allowUniversalAccessFromFileURLs
-          javaScriptEnabled
-          domStorageEnabled
-          mediaPlaybackRequiresUserAction={false}
-          onMessage={onWebMessage}
-          onLoadEnd={() => setPackStatus('loaded')}
-          onError={e =>
-            setPackStatus('error: ' + JSON.stringify(e?.nativeEvent))
-          }
-        />
+    <View style={styles.root} onTouchEnd={focusInput}>
+      <StatusBar hidden />
+      <WebView
+        ref={webviewRef}
+        source={{uri: PACK_URL}}
+        style={StyleSheet.absoluteFill}
+        originWhitelist={['*']}
+        allowFileAccess
+        allowFileAccessFromFileURLs
+        allowUniversalAccessFromFileURLs
+        javaScriptEnabled
+        domStorageEnabled
+        mediaPlaybackRequiresUserAction={false}
+        onMessage={onWebMessage}
+        onLoadEnd={() => setPackStatus('loaded')}
+        onError={e => setPackStatus('error: ' + JSON.stringify(e?.nativeEvent))}
+      />
 
-        {/* Hidden input that DataWedge keystrokes land in. Off-screen, no UI. */}
-        <TextInput
-          ref={inputRef}
-          autoFocus
-          blurOnSubmit={false}
-          showSoftInputOnFocus={false}
-          caretHidden
-          onChangeText={onChange}
-          onSubmitEditing={commit}
-          onBlur={() => requestAnimationFrame(focusInput)}
-          style={styles.hiddenInput}
-        />
+      {/* Hidden input that DataWedge keystrokes land in. Off-screen, no UI. */}
+      <TextInput
+        ref={inputRef}
+        autoFocus
+        blurOnSubmit={false}
+        showSoftInputOnFocus={false}
+        caretHidden
+        onChangeText={onChange}
+        onSubmitEditing={commit}
+        onBlur={() => requestAnimationFrame(focusInput)}
+        style={styles.hiddenInput}
+      />
 
-        {/* Overlay HUD */}
-        {SHOW_DEBUG_INFO && (
-          <View style={styles.hud} pointerEvents="none">
-            <Text style={styles.label}>PACK</Text>
-            <Text style={styles.value}>{packStatus}</Text>
-            <Text style={styles.label}>LAST BARCODE</Text>
-            <Text style={styles.scan}>{lastScan}</Text>
-            <Text style={styles.label}>SCANS</Text>
-            <Text style={styles.value}>{count}</Text>
-            <Text style={styles.label}>TYPING (live)</Text>
-            <Text style={styles.typing}>{buffer || '—'}</Text>
-            <Text style={styles.label}>DASHBOARD</Text>
-            <Text style={styles.value}>{agentStatus}</Text>
-            <Text style={styles.label}>CRADLE</Text>
-            <Text style={styles.value}>
-              {docked === null ? '—' : docked ? 'docked' : 'undocked'}
-            </Text>
-            <Text style={styles.label}>UNLOCK</Text>
-            <Text style={styles.typing}>{unlockMsg}</Text>
-          </View>
-        )}
+      {/* Overlay HUD */}
+      {SHOW_DEBUG_INFO && (
+        <View style={styles.hud} pointerEvents="none">
+          <Text style={styles.label}>PACK</Text>
+          <Text style={styles.value}>{packStatus}</Text>
+          <Text style={styles.label}>LAST BARCODE</Text>
+          <Text style={styles.scan}>{lastScan}</Text>
+          <Text style={styles.label}>SCANS</Text>
+          <Text style={styles.value}>{count}</Text>
+          <Text style={styles.label}>TYPING (live)</Text>
+          <Text style={styles.typing}>{buffer || '—'}</Text>
+          <Text style={styles.label}>DASHBOARD</Text>
+          <Text style={styles.value}>{agentStatus}</Text>
+          <Text style={styles.label}>CRADLE</Text>
+          <Text style={styles.value}>
+            {docked === null ? '—' : docked ? 'docked' : 'undocked'}
+          </Text>
+          <Text style={styles.label}>UNLOCK</Text>
+          <Text style={styles.typing}>{unlockMsg}</Text>
+        </View>
+      )}
 
-        {/* Manual local unlock — only meaningful while docked, so hide it otherwise. */}
-        {docked === true && (
-          <TouchableOpacity style={styles.unlockBtn} onPress={unlockLocal}>
-            <Text style={styles.unlockBtnText}>UNLOCK CRADLE</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    </TouchableWithoutFeedback>
+      {/* Manual local unlock — only meaningful while docked, so hide it otherwise. */}
+      {docked === true && (
+        <TouchableOpacity style={styles.unlockBtn} onPress={unlockLocal}>
+          <Text style={styles.unlockBtnText}>UNLOCK CRADLE</Text>
+        </TouchableOpacity>
+      )}
+    </View>
   );
 }
 
