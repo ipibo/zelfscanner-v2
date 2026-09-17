@@ -92,6 +92,10 @@ function App(): React.JSX.Element {
       }
       if (msg.type === 'sceneEnd') {
         setPackStatus(`scene end: ${msg.payload?.id}`);
+      } else if (msg.type === 'storyStart') {
+        setPackStatus(`story start: ${msg.payload?.id}`);
+      } else if (msg.type === 'reset') {
+        setPackStatus(`reset from: ${msg.payload?.from}`);
       } else if (msg.type === 'puzzleSolved') {
         setPackStatus(`puzzle solved: ${msg.payload?.id}`);
       } else if (msg.type === 'wrongScan') {

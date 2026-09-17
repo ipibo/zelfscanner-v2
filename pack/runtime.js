@@ -16,7 +16,12 @@
   var manifest = null;
   var scenesById = {};
   var sceneIndex = 0;
+  var onSplash = false;
+  var instructionHeld = false; // editor-preview: luisterinstructie blijft staan
   var errorTimer = null;
+
+  var DEFAULT_INSTRUCTION_TEXT = 'Keep the scanner next to your ear';
+  var DEFAULT_INSTRUCTION_SECONDS = 5;
 
   function log(msg) {
     debugEl.textContent = msg;
@@ -40,7 +45,9 @@
     }
   }
 
-  function loadScene(id) {
+  // underOverlay: de scene wordt onder de luisterinstructie neergezet. Die
+  // laag blijft dan staan en de narratie wacht tot hij weg is.
+  function loadScene(id, underOverlay) {
     var scene = scenesById[id];
     if (!scene) {
       log('onbekende scene: ' + id);
@@ -48,6 +55,14 @@
     }
     sceneIndex = manifest.scenes.indexOf(scene);
     hideError();
+    if (onSplash) {
+      onSplash = false;
+      window.ZSSplash.hide();
+    }
+    if (!underOverlay) {
+      instructionHeld = false;
+      window.ZSOverlay.hide();
+    }
 
     // Elke scene begint zonder puzzel; een puzzel-scene zet hem zo weer neer.
     // Zo ruimt doorscannen midden in een puzzel zichzelf op.
@@ -93,7 +108,9 @@
       video.removeAttribute('src');
       video.style.display = 'none';
       photo.src = scene.image;
-      photo.style.display = '';
+      // 'block', niet '': index.html zet img#photo standaard op display:none,
+      // dus leegmaken liet de foto onzichtbaar (sinds 408b566).
+      photo.style.display = 'block';
     } else {
       video.pause();
       video.removeAttribute('src');
@@ -105,7 +122,9 @@
     if (scene.audio) {
       narrator.src = scene.audio;
       narrator.currentTime = 0;
-      safePlay(narrator, 'scene ' + scene.id + ' audio');
+      if (!underOverlay) {
+        safePlay(narrator, 'scene ' + scene.id + ' audio');
+      }
     } else {
       narrator.pause();
       narrator.removeAttribute('src');
@@ -146,8 +165,88 @@
     errorEl.classList.remove('show');
   }
 
+  // Alles wat een scene op scherm of speaker heeft gezet weg: video, foto,
+  // puzzel (met zijn voortgang), narratie, ondertitel, foutmelding.
+  function clearStage() {
+    clearTimeout(errorTimer);
+    hideError();
+    instructionHeld = false;
+    window.ZSOverlay.hide();
+    if (window.ZSPuzzle) {
+      window.ZSPuzzle.unmount();
+    }
+    video.pause();
+    video.removeAttribute('src');
+    video.style.display = 'none';
+    photo.style.display = 'none';
+    photo.removeAttribute('src');
+    narrator.pause();
+    narrator.removeAttribute('src');
+    captionEl.classList.remove('show');
+    captionEl.textContent = '';
+  }
+
+  // Het splash-scherm staat altijd vóór de eerste scene: bij boot en na een
+  // reset-scan. Swipen start de story bij manifest.scenes[0].
+  function showSplash() {
+    clearStage();
+    onSplash = true;
+    sceneIndex = 0;
+    window.ZSSplash.show(manifest.splash, startStory, log);
+    log('splash — swipe om te starten' + (manifest.resetScan ? ' (reset = ' + manifest.resetScan + ')' : ''));
+  }
+
+  function instructionText() {
+    var instr = manifest.instruction || {};
+    return instr.text || DEFAULT_INSTRUCTION_TEXT;
+  }
+
+  // Na het swipen: luisterinstructie fadet in over het splash-scherm, daaronder
+  // wisselt het beeld naar de eerste scene, na `seconds` fadet hij weg en
+  // start pas de narratie. seconds 0 = geen instructie. Wordt er intussen
+  // gescand (of gereset), dan ruimt loadScene/showSplash de laag direct op en
+  // komt onDone nooit.
+  function startStory() {
+    var first = manifest.scenes[0];
+    post('storyStart', {id: first.id});
+    var instr = manifest.instruction || {};
+    var seconds = typeof instr.seconds === 'number' ? instr.seconds : DEFAULT_INSTRUCTION_SECONDS;
+    if (!(seconds > 0)) {
+      loadScene(first.id);
+      return;
+    }
+    window.ZSOverlay.show(instructionText(), {
+      seconds: seconds,
+      onShown: function () {
+        loadScene(first.id, true);
+        log('luisterinstructie — ' + seconds + 's');
+      },
+      onDone: function () {
+        log('scene ' + first.id + (first.expectScan ? ' — wacht op ' + first.expectScan : ' — einde'));
+        if (narrator.getAttribute('src')) {
+          safePlay(narrator, 'scene ' + first.id + ' audio');
+        }
+      }
+    });
+  }
+
   // Native (App.tsx) roept dit aan via injectJavaScript bij elke scan.
   window.onNativeScan = function (code) {
+    if (!manifest) {
+      return;
+    }
+    // De reset-barcode werkt altijd, in elke scene: voortgang weg, terug naar
+    // het splash-scherm voor de volgende bezoeker.
+    if (manifest.resetScan && code === manifest.resetScan) {
+      post('reset', {from: onSplash ? 'splash' : manifest.scenes[sceneIndex].id});
+      showSplash();
+      return;
+    }
+    // Op het splash-scherm wordt nog niets verwacht: andere scans negeren,
+    // ook zonder "verkeerd product".
+    if (onSplash) {
+      return;
+    }
     var scene = manifest.scenes[sceneIndex];
     if (!scene || !scene.expectScan) {
       return;
@@ -170,6 +269,27 @@
     if (manifest) loadScene(id);
   };
 
+  // Idem voor het splash-scherm. De editor geeft zijn (nog niet opgeslagen)
+  // splash-instellingen en reset-code mee, zodat de preview meteen meedoet.
+  // Editor: luisterinstructie blijvend tonen boven de eerste scene, zodat je
+  // de tekst live kunt aanpassen. Een tweede aanroep ververst alleen de tekst.
+  window.__gotoInstruction = function (instruction) {
+    if (!manifest || !manifest.scenes.length) return;
+    if (instruction !== undefined) manifest.instruction = instruction;
+    if (!instructionHeld) {
+      loadScene(manifest.scenes[0].id, true);
+      instructionHeld = true;
+    }
+    window.ZSOverlay.show(instructionText(), {hold: true});
+  };
+
+  window.__gotoSplash = function (splash, resetScan) {
+    if (!manifest) return;
+    if (splash !== undefined) manifest.splash = splash;
+    if (resetScan !== undefined) manifest.resetScan = resetScan;
+    showSplash();
+  };
+
   function boot() {
     var xhr = new XMLHttpRequest();
     xhr.open('GET', 'manifest.json', true);
@@ -181,7 +301,7 @@
         scenesById[manifest.scenes[i].id] = manifest.scenes[i];
       }
       log('pack v' + manifest.version + ' — ' + manifest.scenes.length + ' scenes geladen');
-      loadScene(manifest.scenes[0].id);
+      showSplash();
     };
     xhr.onerror = function () {
       log('manifest.json laden MISLUKT');

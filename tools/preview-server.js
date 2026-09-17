@@ -17,6 +17,8 @@ const PACK_DIR = path.join(ROOT, 'pack');
 const MANIFEST_PATH = path.join(PACK_DIR, 'manifest.json');
 const PORT = Number(process.argv[2]) || 8934;
 const BARCODE_RE = /^\d{8,14}$/;
+const COLOR_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+const MAX_INSTRUCTION_SECONDS = 60;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -82,6 +84,43 @@ function validateManifest(manifest) {
   if (!manifest || typeof manifest !== 'object') return ['manifest is geen object'];
   if (!Array.isArray(manifest.scenes) || manifest.scenes.length === 0) {
     return ['manifest.scenes ontbreekt of is leeg'];
+  }
+
+  // Zonder reset-barcode kan een scanner na de laatste scene nooit meer terug
+  // naar het splash-scherm, dus verplicht.
+  if (!manifest.resetScan) {
+    errors.push('splash: reset-barcode ontbreekt (terug naar het splash-scherm)');
+  } else if (!BARCODE_RE.test(manifest.resetScan)) {
+    errors.push(`splash: reset-barcode "${manifest.resetScan}" ziet er niet uit als een barcode (8-14 cijfers)`);
+  } else {
+    manifest.scenes.forEach(scene => {
+      if (scene.expectScan === manifest.resetScan) {
+        errors.push(`splash: reset-barcode "${manifest.resetScan}" is ook de scan van scene "${scene.id}" — kies een andere`);
+      }
+    });
+  }
+  const splash = manifest.splash || {};
+  if (typeof splash !== 'object') {
+    errors.push('splash is geen object');
+  } else {
+    if (splash.sliderColor && !COLOR_RE.test(splash.sliderColor)) {
+      errors.push(`splash: slider-kleur "${splash.sliderColor}" is geen hex-kleur (bv. #ffff5c)`);
+    }
+    if (splash.image && !fs.existsSync(path.join(PACK_DIR, splash.image))) {
+      errors.push(`splash: afbeelding niet gevonden: ${splash.image}`);
+    }
+  }
+  const instruction = manifest.instruction || {};
+  if (typeof instruction !== 'object') {
+    errors.push('instruction is geen object');
+  } else {
+    const secs = instruction.seconds;
+    if (secs !== undefined && !(typeof secs === 'number' && secs >= 0 && secs <= MAX_INSTRUCTION_SECONDS)) {
+      errors.push(`luisterinstructie: duur moet 0 t/m ${MAX_INSTRUCTION_SECONDS} seconden zijn (0 = overslaan)`);
+    }
+    if (instruction.text !== undefined && typeof instruction.text !== 'string') {
+      errors.push('luisterinstructie: tekst is geen tekst');
+    }
   }
 
   const ids = new Set();

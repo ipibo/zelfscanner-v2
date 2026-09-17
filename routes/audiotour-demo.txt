@@ -1,6 +1,8 @@
 # Audiotour demo route -- placeholder narration (macOS `say`, Xander/nl_NL),
 # real barcodes to be swapped in once the actual route is walked in-store.
 version: 0.1.0
+# terug naar het splash-scherm, vanuit elke scene
+reset: 8712345679999
 
 scene: intro
 audio: assets/audio/intro.mp3

@@ -105,6 +105,21 @@ Keys: `scene` (id, verplicht), `video`, `image`, `puzzle`, `audio`, `text`
 (caption), `scan` (verwachte barcode, optioneel voor een eindscene), `next`
 (expliciete volgende scene-id).
 
+Bovenin de route, vóór de eerste `scene:` (net als `version`):
+
+```
+version: 0.2.0
+reset: 8712345679999
+splash: assets/images/start.jpg
+splashColor: #ffff5c
+splashText: Swipe to start
+instruction: Keep the scanner next to your ear
+instructionSeconds: 5
+```
+
+`reset` is verplicht (zie splash-scherm hieronder), de `splash*`- en
+`instruction*`-keys niet.
+
 Een scene heeft één beelddrager: óf `video`, óf `image`, óf `puzzle`. Bij
 `image` en `puzzle` mag `audio`-narratie, bij `video` niet (die staat op
 zichzelf). `pack:build` en de story editor weigeren allebei een manifest dat
@@ -118,6 +133,72 @@ npm run pack:build -- routes/<naam>.txt
 
 Valideert: barcode-vorm (8-14 cijfers), of audio/video bestanden echt bestaan
 in `pack/assets/`, dubbele scene-ids, en dangling `next`-references.
+
+## Splash-scherm en reset-barcode (`pack/splash.js`)
+
+Elke story begint met een splash-scherm, altijd, vóór de eerste scene. Dat
+staat niet als scene in het manifest maar als vast onderdeel ervan:
+
+```json
+"resetScan": "8712345679999",
+"splash": {
+  "image": "assets/images/start.jpg",
+  "sliderColor": "#ffff5c",
+  "sliderText": "Swipe to start"
+}
+```
+
+- `image` vult het scherm boven de slider. Leeg = zwart.
+- Onderin een slider: wit blok met pijl, baan in `sliderColor` (leeg =
+  `#ffff5c`) met `sliderText` (leeg = "Swipe to start"). Blok voorbij 60%
+  naar rechts slepen start de story bij de eerste scene, minder veert terug.
+  Slepen mag overal op de slider beginnen.
+- Scans op het splash-scherm doen niets (geen "verkeerd product").
+- **`resetScan` werkt in elke scene**: puzzel, video, audio, ondertitel en
+  voortgang weg, terug naar het splash-scherm voor de volgende bezoeker.
+  Verplicht, en mag niet gelijk zijn aan een `expectScan` van een scene —
+  `pack:build` en de editor weigeren anders. Printen via **Barcodes (PDF)** in
+  de editor, daar staat hij als rode RESET-kaart vooraan.
+- Naar de native laag gaan `storyStart` (na de swipe) en `reset` (met de
+  scene waar vandaan), zichtbaar in de HUD.
+
+In de story editor staat **Splash** altijd bovenaan de scenelijst. Wijzigingen
+aan afbeelding, kleur, tekst en reset-code zie je meteen in de preview, nog
+voor je opslaat. Heeft een ouder manifest nog geen reset-code, dan stelt de
+editor er bij openen een voor.
+
+Maten en de 60%-grens staan bovenin `pack/splash.js` (`DONE_AT`, CSS in vw).
+
+## Luisterinstructie (`pack/overlay.js`)
+
+Direct na het swipen verschijnt een melding als donkere laag over het beeld,
+met witte tekst in het midden:
+
+```json
+"instruction": {
+  "text": "Keep the scanner next to your ear",
+  "seconds": 5
+}
+```
+
+Volgorde, zoals nu gebouwd (2026-09-17, volgorde wordt nog verfijnd):
+
+1. Swipe af: de laag fadet in over het splash-scherm.
+2. Zodra hij dekt wisselt het beeld eronder naar de eerste scene (het eerste
+   product).
+3. Na `seconds` fadet de laag weg en start pas de narratie van de eerste
+   scene. Een video in die scene speelt er al onder.
+
+- `text` leeg = "Keep the scanner next to your ear". Een enter in de tekst
+  is een nieuwe regel.
+- `seconds` leeg = 5, `0` = geen instructie, meteen de eerste scene. Max 60.
+- Scannen tijdens de melding werkt gewoon: juiste scan gaat door (melding
+  weg), reset gaat terug naar splash, "verkeerd product" ligt eroverheen.
+- Aanraken tijdens de melding doet niets.
+
+In de story editor staat **Luisterinstructie** vast onder Splash. Aanklikken
+houdt de melding in de preview in beeld zolang je de tekst aanpast. De echte
+timing zie je door op Splash te klikken en in de preview te swipen.
 
 ## Puzzel-minigame (`pack/puzzle.js`)
 
@@ -198,7 +279,8 @@ Zelfde server als hierboven (`npm run pack:preview`), andere pagina:
 http://localhost:8934/tools/editor.html
 ```
 
-Visuele editor voor `pack/manifest.json`: scenes toevoegen/verwijderen/
+Visuele editor voor `pack/manifest.json`: splash-scherm instellen (zie
+hierboven), scenes toevoegen/verwijderen/
 herordenen, per scene een type kiezen — Video (default voor een nieuwe
 scene), Afbeelding + audio, of Puzzel + audio (nooit twee tegelijk, zie
 hierboven) —

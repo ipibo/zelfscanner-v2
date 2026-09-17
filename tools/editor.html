@@ -81,6 +81,30 @@
       .scene-item button:hover {
         opacity: 1;
       }
+      .scene-item.fixed {
+        border-left: 3px solid #ffff5c;
+      }
+      .scene-item.fixed + .scene-item:not(.fixed) {
+        margin-top: 10px;
+      }
+      .scene-item .tag {
+        font-size: 10px;
+        opacity: 0.6;
+        flex-shrink: 0;
+      }
+      #form .intro {
+        font-size: 11px;
+        color: #888;
+        line-height: 1.4;
+        margin: -4px 0 4px;
+      }
+      #form input[type='color'] {
+        width: 44px;
+        height: 31px;
+        padding: 2px;
+        flex-shrink: 0;
+        cursor: pointer;
+      }
       #add-scene {
         width: 100%;
         padding: 8px;
@@ -432,9 +456,15 @@
 
     <script>
       (function () {
-        var manifest = {version: '0.1.0', scenes: []};
+        var manifest = {version: '0.1.0', scenes: [], splash: {}, instruction: {}};
         var assets = {video: [], audio: [], image: []};
-        var activeIndex = -1;
+        // Vaste onderdelen bovenaan de lijst, vóór scene 0:
+        // -1 = het splash-scherm, -2 = de luisterinstructie na het swipen.
+        var SPLASH = -1;
+        var INSTRUCTION = -2;
+        var DEFAULT_INSTRUCTION_TEXT = 'Keep the scanner next to your ear';
+        var DEFAULT_INSTRUCTION_SECONDS = 5; // zelfde defaults als pack/runtime.js
+        var activeIndex = SPLASH;
         // Explicit mode per scene, independent of whether video/image is
         // filled in yet -- deriving mode purely from field presence broke
         // switching back to "Video" once its field was empty (fell through
@@ -466,12 +496,46 @@
         // (via runtime.js's window.__gotoScene, see pack/runtime.js) instead
         // of leaving it wherever it happened to be.
         function syncPreviewToActiveScene() {
-          var scene = manifest.scenes[activeIndex];
-          if (!scene) return;
           var win = frame.contentWindow;
-          if (win && typeof win.__gotoScene === 'function') {
+          if (!win) return;
+          if (activeIndex === SPLASH) {
+            // kopie: de preview mag het object van de editor niet delen
+            if (typeof win.__gotoSplash === 'function') {
+              win.__gotoSplash(
+                JSON.parse(JSON.stringify(manifest.splash || {})),
+                manifest.resetScan || null,
+              );
+            }
+            return;
+          }
+          if (activeIndex === INSTRUCTION) {
+            if (typeof win.__gotoInstruction === 'function') {
+              win.__gotoInstruction(
+                JSON.parse(JSON.stringify(manifest.instruction || {})),
+              );
+            }
+            return;
+          }
+          var scene = manifest.scenes[activeIndex];
+          if (scene && typeof win.__gotoScene === 'function') {
             win.__gotoScene(scene.id);
           }
+        }
+
+        // Willekeurige 13-cijferige code die nog nergens in de story gebruikt
+        // wordt (geen scene-scan, niet de reset-code), behalve door `self`.
+        function randomBarcode(self) {
+          var used = {};
+          manifest.scenes.forEach(function (s) {
+            if (s !== self && s.expectScan) used[s.expectScan] = true;
+          });
+          if (self !== SPLASH && manifest.resetScan) used[manifest.resetScan] = true;
+          var code;
+          do {
+            code = '';
+            for (var i = 0; i < 13; i++) code += Math.floor(Math.random() * 10);
+          } while (used[code]);
+          return code;
         }
         frame.addEventListener('load', syncPreviewToActiveScene);
 
@@ -486,7 +550,17 @@
               if (data && data.scenes) {
                 manifest = data;
               }
-              activeIndex = manifest.scenes.length ? 0 : -1;
+              manifest.splash = manifest.splash || {};
+              manifest.instruction = manifest.instruction || {};
+              // Oudere packs hebben nog geen reset-code: meteen eentje
+              // voorstellen, opslaan zonder kan niet.
+              if (!manifest.resetScan) {
+                manifest.resetScan = randomBarcode(SPLASH);
+                setStatus(
+                  'nieuwe reset-barcode ' + manifest.resetScan + ' voorgesteld — nog niet opgeslagen',
+                );
+              }
+              activeIndex = SPLASH;
               versionEl.value = manifest.version || '0.1.0';
               renderAll();
             })
@@ -512,6 +586,29 @@
 
         function renderSceneList() {
           sceneListEl.innerHTML = '';
+
+          function fixedItem(index, label, tag) {
+            var item = document.createElement('div');
+            item.className =
+              'scene-item fixed' + (activeIndex === index ? ' active' : '');
+            var name = document.createElement('span');
+            name.className = 'name';
+            name.textContent = label;
+            item.appendChild(name);
+            var t = document.createElement('span');
+            t.className = 'tag';
+            t.textContent = tag;
+            item.appendChild(t);
+            item.onclick = function () {
+              activeIndex = index;
+              renderAll();
+              syncPreviewToActiveScene();
+            };
+            sceneListEl.appendChild(item);
+          }
+          fixedItem(SPLASH, 'Splash', 'altijd eerst');
+          fixedItem(INSTRUCTION, 'Luisterinstructie', 'na swipen');
+
           manifest.scenes.forEach(function (scene, i) {
             var item = document.createElement('div');
             item.className =
@@ -669,8 +766,187 @@
           return wrap;
         }
 
+        function afterAssetChange() {
+          loadAssets().then(renderForm);
+        }
+
+        // Tekst/kleur/afbeelding meteen in de preview, niet pas na opslaan.
+        function afterSplashChange() {
+          syncPreviewToActiveScene();
+        }
+
+        function toHex6(color) {
+          var m = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(color || '');
+          if (m) return '#' + m[1] + m[1] + m[2] + m[2] + m[3] + m[3];
+          return /^#[0-9a-f]{6}$/i.test(color || '') ? color : null;
+        }
+
+        function renderSplashForm() {
+          var splash = manifest.splash;
+
+          var h1 = document.createElement('h1');
+          h1.textContent = 'Splash-scherm';
+          formEl.appendChild(h1);
+
+          var intro = document.createElement('div');
+          intro.className = 'intro';
+          intro.textContent =
+            'Staat altijd vóór de eerste scene. De bezoeker swipet het witte blok naar ' +
+            'rechts om te starten. De reset-barcode brengt een scanner vanuit elke scene ' +
+            'hier terug en wist alle voortgang.';
+          formEl.appendChild(intro);
+
+          // achtergrond
+          var imageSelect = assetPicker('image', splash.image, function (v) {
+            splash.image = v;
+            afterSplashChange();
+          });
+          formEl.appendChild(
+            field('achtergrond (afbeelding)', imageSelect, 'Vult het scherm boven de slider.'),
+          );
+          formEl.appendChild(
+            uploadRow('image', function (path) {
+              splash.image = path;
+              afterAssetChange();
+              afterSplashChange();
+            }),
+          );
+
+          // slider-kleur: kleurkiezer + hex-veld, blijven gelijk
+          var colorRow = document.createElement('div');
+          colorRow.style.cssText = 'display:flex;gap:6px;';
+          var colorPick = document.createElement('input');
+          colorPick.type = 'color';
+          var colorText = document.createElement('input');
+          colorText.placeholder = '#ffff5c';
+          colorText.style.flex = '1';
+          colorText.value = splash.sliderColor || '';
+          colorPick.value = toHex6(splash.sliderColor) || '#ffff5c';
+          colorPick.oninput = function () {
+            colorText.value = colorPick.value;
+            splash.sliderColor = colorPick.value;
+            afterSplashChange();
+          };
+          colorText.oninput = function () {
+            var v = colorText.value.trim();
+            splash.sliderColor = v || undefined;
+            if (toHex6(v)) colorPick.value = toHex6(v);
+            if (!v || toHex6(v)) afterSplashChange();
+          };
+          colorRow.appendChild(colorPick);
+          colorRow.appendChild(colorText);
+          formEl.appendChild(
+            field('slider-kleur', colorRow, 'Leeg = geel (#ffff5c).'),
+          );
+
+          // slider-tekst
+          var textInput = document.createElement('input');
+          textInput.value = splash.sliderText || '';
+          textInput.placeholder = 'Swipe to start';
+          textInput.style.fontFamily = 'sans-serif';
+          textInput.style.color = '#eee';
+          textInput.oninput = function () {
+            splash.sliderText = textInput.value || undefined;
+            afterSplashChange();
+          };
+          formEl.appendChild(field('slider-tekst', textInput, 'Leeg = "Swipe to start".'));
+
+          // reset-barcode
+          var resetRow = document.createElement('div');
+          resetRow.style.cssText = 'display:flex;gap:6px;';
+          var resetInput = document.createElement('input');
+          resetInput.value = manifest.resetScan || '';
+          resetInput.placeholder = '8712345679999';
+          resetInput.style.flex = '1';
+          resetInput.oninput = function () {
+            manifest.resetScan = resetInput.value.trim() || null;
+            afterSplashChange();
+          };
+          var genBtn = document.createElement('button');
+          genBtn.type = 'button';
+          genBtn.textContent = 'genereer';
+          genBtn.title = 'willekeurige unieke barcode invullen';
+          genBtn.style.cssText =
+            'padding:0 12px;font-size:11px;background:#444;color:#eee;border:0;border-radius:3px;cursor:pointer;white-space:nowrap;';
+          genBtn.onclick = function () {
+            manifest.resetScan = randomBarcode(SPLASH);
+            resetInput.value = manifest.resetScan;
+            afterSplashChange();
+          };
+          resetRow.appendChild(resetInput);
+          resetRow.appendChild(genBtn);
+          formEl.appendChild(
+            field(
+              'reset-barcode (verplicht)',
+              resetRow,
+              'Werkt in elke scene: terug naar dit scherm, alle voortgang weg. ' +
+                'Printbaar via "Barcodes (PDF)". Mag niet gelijk zijn aan een scene-scan.',
+            ),
+          );
+        }
+
+        function renderInstructionForm() {
+          var instr = manifest.instruction;
+
+          var h1 = document.createElement('h1');
+          h1.textContent = 'Luisterinstructie';
+          formEl.appendChild(h1);
+
+          var intro = document.createElement('div');
+          intro.className = 'intro';
+          intro.textContent =
+            'Verschijnt direct na het swipen als donkere laag met tekst over het beeld. ' +
+            'Daaronder staat al de eerste scene; de narratie daarvan start pas als de ' +
+            'laag weg is. Timing testen: klik Splash en swipe in de preview.';
+          formEl.appendChild(intro);
+
+          var textInput = document.createElement('textarea');
+          textInput.value = instr.text || '';
+          textInput.placeholder = DEFAULT_INSTRUCTION_TEXT;
+          textInput.oninput = function () {
+            instr.text = textInput.value || undefined;
+            syncPreviewToActiveScene();
+          };
+          formEl.appendChild(
+            field(
+              'tekst',
+              textInput,
+              'Leeg = "' + DEFAULT_INSTRUCTION_TEXT + '". Enter = nieuwe regel.',
+            ),
+          );
+
+          var secInput = document.createElement('input');
+          secInput.type = 'number';
+          secInput.min = '0';
+          secInput.max = '60';
+          secInput.step = '0.5';
+          secInput.placeholder = String(DEFAULT_INSTRUCTION_SECONDS);
+          secInput.value =
+            typeof instr.seconds === 'number' ? String(instr.seconds) : '';
+          secInput.oninput = function () {
+            var v = secInput.value.trim();
+            instr.seconds = v === '' ? undefined : Number(v);
+          };
+          formEl.appendChild(
+            field(
+              'duur (seconden)',
+              secInput,
+              'Hoe lang de melding helemaal in beeld staat, plus een korte fade in en uit. ' +
+                'Leeg = ' + DEFAULT_INSTRUCTION_SECONDS + '. 0 = geen instructie, meteen de eerste scene.',
+            ),
+          );
+        }
+
         function renderForm() {
           formEl.innerHTML = '';
+          if (activeIndex === SPLASH) {
+            renderSplashForm();
+            return;
+          }
+          if (activeIndex === INSTRUCTION) {
+            renderInstructionForm();
+            return;
+          }
           var scene = manifest.scenes[activeIndex];
           if (!scene) {
             formEl.innerHTML =
@@ -700,10 +976,6 @@
               : scene.puzzle
                 ? 'puzzle'
                 : 'image';
-
-          function afterAssetChange() {
-            loadAssets().then(renderForm);
-          }
 
           function modeRadio(value, labelText) {
             var lbl = document.createElement('label');
@@ -823,15 +1095,7 @@
           genBtn.style.cssText =
             'padding:0 12px;font-size:11px;background:#444;color:#eee;border:0;border-radius:3px;cursor:pointer;white-space:nowrap;';
           genBtn.onclick = function () {
-            var used = {};
-            manifest.scenes.forEach(function (s) {
-              if (s !== scene && s.expectScan) used[s.expectScan] = true;
-            });
-            var code;
-            do {
-              code = '';
-              for (var i = 0; i < 13; i++) code += Math.floor(Math.random() * 10);
-            } while (used[code]);
+            var code = randomBarcode(scene);
             scanInput.value = code;
             scene.expectScan = code;
           };

@@ -4,6 +4,12 @@
 # eerst of maak de puzzel-scene gewoon in de story editor.
 
 version: 0.2.0
+reset: 8712345679999
+splash: assets/images/puzzel-test.jpg
+splashColor: #ffff5c
+splashText: Swipe to start
+instruction: Keep the scanner next to your ear
+instructionSeconds: 5
 
 scene: puzzel
 puzzle: assets/images/puzzel-test.jpg

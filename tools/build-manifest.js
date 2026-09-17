@@ -9,10 +9,26 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const BARCODE_RE = /^\d{8,14}$/;
+const COLOR_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+const MAX_INSTRUCTION_SECONDS = 60;
+
+// Splash-, instructie- en reset-instellingen staan bovenin de route, net als
+// "version".
+const TOP_LEVEL = {
+  reset: 'resetScan',
+  splash: 'image',
+  splashcolor: 'sliderColor',
+  splashtext: 'sliderText',
+  instruction: 'text',
+  instructionseconds: 'seconds',
+};
 
 function parseRoute(src) {
   const lines = src.split(/\r?\n/);
   let version = '0.1.0';
+  let resetScan = null;
+  const splash = {};
+  const instruction = {};
   const scenes = [];
   let current = null;
 
@@ -29,11 +45,15 @@ function parseRoute(src) {
     const key = m[1].toLowerCase();
     const value = m[2].trim();
 
-    if (key === 'version') {
+    if (key === 'version' || TOP_LEVEL[key]) {
       if (current) {
-        throw new Error(`route:${lineNo}: "version" moet vóór de eerste scene staan`);
+        throw new Error(`route:${lineNo}: "${key}" moet vóór de eerste scene staan`);
       }
-      version = value;
+      if (key === 'version') version = value;
+      else if (key === 'reset') resetScan = value;
+      else if (key === 'instruction') instruction.text = value;
+      else if (key === 'instructionseconds') instruction.seconds = Number(value);
+      else splash[TOP_LEVEL[key]] = value;
       return;
     }
     if (key === 'scene') {
@@ -60,12 +80,36 @@ function parseRoute(src) {
     }
   });
 
-  return {version: version, scenes: scenes};
+  return {version: version, resetScan: resetScan, splash: splash, instruction: instruction, scenes: scenes};
 }
 
 function validate(route, assetsBaseDir) {
   const errors = [];
   const ids = new Set();
+
+  // Zonder reset-barcode kan een scanner na de laatste scene nooit meer terug
+  // naar het splash-scherm, dus verplicht.
+  if (!route.resetScan) {
+    errors.push('"reset: <barcode>" ontbreekt bovenin de route (terug naar het splash-scherm)');
+  } else if (!BARCODE_RE.test(route.resetScan)) {
+    errors.push(`reset "${route.resetScan}" ziet er niet uit als een barcode (8-14 cijfers)`);
+  } else {
+    route.scenes.forEach(scene => {
+      if (scene.expectScan === route.resetScan) {
+        errors.push(`reset "${route.resetScan}" is ook de scan van scene "${scene.id}" — kies een andere`);
+      }
+    });
+  }
+  if (route.splash.sliderColor && !COLOR_RE.test(route.splash.sliderColor)) {
+    errors.push(`splashColor "${route.splash.sliderColor}" is geen hex-kleur (bv. #ffff5c)`);
+  }
+  if (route.splash.image && !fs.existsSync(path.join(assetsBaseDir, route.splash.image))) {
+    errors.push(`splash bestand niet gevonden: ${route.splash.image}`);
+  }
+  const secs = route.instruction.seconds;
+  if (secs !== undefined && !(secs >= 0 && secs <= MAX_INSTRUCTION_SECONDS)) {
+    errors.push(`instructionSeconds moet een getal van 0 t/m ${MAX_INSTRUCTION_SECONDS} zijn (0 = geen instructie)`);
+  }
 
   route.scenes.forEach(scene => {
     if (!scene.id) {
@@ -111,8 +155,18 @@ function validate(route, assetsBaseDir) {
 }
 
 function toManifest(route) {
+  const splash = {};
+  ['image', 'sliderColor', 'sliderText'].forEach(field => {
+    if (route.splash[field]) splash[field] = route.splash[field];
+  });
+  const instruction = {};
+  if (route.instruction.text) instruction.text = route.instruction.text;
+  if (route.instruction.seconds !== undefined) instruction.seconds = route.instruction.seconds;
   return {
     version: route.version,
+    resetScan: route.resetScan,
+    splash: splash,
+    instruction: instruction,
     scenes: route.scenes.map(scene => {
       const out = {id: scene.id};
       if (scene.audio) out.audio = scene.audio;

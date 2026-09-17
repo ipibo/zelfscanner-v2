@@ -169,8 +169,11 @@
 
         function buildUsage(manifest) {
           var usage = {}; // path -> [sceneId, ...]
+          if (manifest.splash && manifest.splash.image) {
+            usage[manifest.splash.image] = ['splash'];
+          }
           (manifest.scenes || []).forEach(function (scene) {
-            ['video', 'image', 'audio'].forEach(function (field) {
+            ['video', 'image', 'puzzle', 'audio'].forEach(function (field) {
               if (!scene[field]) return;
               usage[scene[field]] = usage[scene[field]] || [];
               usage[scene[field]].push(scene.id);

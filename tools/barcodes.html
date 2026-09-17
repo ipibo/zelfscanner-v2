@@ -83,6 +83,14 @@
         font-size: 13px;
         letter-spacing: 0.05em;
       }
+      .card.reset {
+        outline: 4px solid #d22;
+        outline-offset: -4px;
+      }
+      .card.reset .scene-id {
+        color: #d22;
+        letter-spacing: 0.08em;
+      }
       #empty {
         padding: 40px 20px;
         color: #999;
@@ -229,6 +237,15 @@
             var scenes = (manifest.scenes || []).filter(function (s) {
               return !!s.expectScan;
             });
+            // reset-code vooraan, als eigen kaart
+            if (manifest.resetScan) {
+              scenes.unshift({
+                id: 'RESET',
+                expectScan: manifest.resetScan,
+                meta: 'terug naar splash, voortgang weg',
+                reset: true,
+              });
+            }
             if (scenes.length === 0) {
               gridEl.innerHTML =
                 '<div id="empty">geen scenes met een verwachte scan in pack/manifest.json</div>';
@@ -236,7 +253,7 @@
             }
             scenes.forEach(function (scene) {
               var card = document.createElement('div');
-              card.className = 'card';
+              card.className = 'card' + (scene.reset ? ' reset' : '');
 
               var id = document.createElement('div');
               id.className = 'scene-id';
@@ -245,7 +262,7 @@
 
               var meta = document.createElement('div');
               meta.className = 'scene-meta';
-              meta.textContent = scene.next ? '→ ' + scene.next : '';
+              meta.textContent = scene.meta || (scene.next ? '→ ' + scene.next : '');
               card.appendChild(meta);
 
               try {

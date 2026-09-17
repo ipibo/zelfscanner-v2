@@ -1,5 +1,15 @@
 {
   "version": "1",
+  "resetScan": "8712345679999",
+  "splash": {
+    "sliderColor": "#ffff5c",
+    "sliderText": "Swipe to start",
+    "image": "assets/images/Screenshot_2026-09-17_at_15.37.48.png"
+  },
+  "instruction": {
+    "text": "Keep the scanner next to your ear",
+    "seconds": 5
+  },
   "scenes": [
     {
       "id": "Begin",
@@ -13,7 +23,9 @@
     },
     {
       "id": "scene6",
-      "expectScan": "7913351912499"
+      "expectScan": "7913351912499",
+      "image": "assets/images/Photo_on_17-09-2026_at_15.08.jpg",
+      "audio": "assets/audio/dairy.mp3"
     }
   ]
 }

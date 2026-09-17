@@ -6,8 +6,10 @@
   html, body { margin: 0; padding: 0; background: #000; height: 100%; overflow: hidden; }
   video, img#photo { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
   img#photo { display: none; }
+  /* top/left/right/bottom i.p.v. inset: inset bestaat pas sinds Chromium 87.
+     z-index boven puzzel (2) en overlay (40), anders zie je de melding daar niet. */
   #error {
-    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 50; display: none; align-items: center; justify-content: center;
     background: rgba(200, 0, 0, 0.85); color: #fff; font: bold 8vw sans-serif; text-align: center;
   }
   #error.show { display: flex; }
@@ -58,9 +60,9 @@
       }
 
       try {
-        // puzzle.js eerst: runtime.js roept ZSPuzzle aan zodra een scene met
-        // een puzzel als eerste scene geladen wordt.
-        if (loadLocal('puzzle.js')) {
+        // modules eerst: runtime.js roept ZSSplash aan zodra het manifest
+        // binnen is, ZSOverlay na het swipen en ZSPuzzle bij een puzzel-scene.
+        if (loadLocal('puzzle.js') && loadLocal('splash.js') && loadLocal('overlay.js')) {
           loadLocal('runtime.js');
         }
       } catch (e) {
