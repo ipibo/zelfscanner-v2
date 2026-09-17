@@ -101,14 +101,14 @@ scan: 8712345678901
 next: scene_2
 ```
 
-Keys: `scene` (id, verplicht), `video`, `image`, `audio`, `text` (caption),
-`scan` (verwachte barcode, optioneel voor een eindscene), `next` (expliciete
-volgende scene-id).
+Keys: `scene` (id, verplicht), `video`, `image`, `puzzle`, `audio`, `text`
+(caption), `scan` (verwachte barcode, optioneel voor een eindscene), `next`
+(expliciete volgende scene-id).
 
-Een scene is óf een `video`, óf een `image` met `audio`-narratie erbij — nooit
-beide. Dus: `video` alleen, of `image` (+ optioneel `audio`), maar niet
-`video` samen met `audio` of `image`. `pack:build` en de story editor
-weigeren allebei een manifest dat dit schendt.
+Een scene heeft één beelddrager: óf `video`, óf `image`, óf `puzzle`. Bij
+`image` en `puzzle` mag `audio`-narratie, bij `video` niet (die staat op
+zichzelf). `pack:build` en de story editor weigeren allebei een manifest dat
+dit schendt.
 
 Bouwen naar `pack/manifest.json`:
 
@@ -118,6 +118,62 @@ npm run pack:build -- routes/<naam>.txt
 
 Valideert: barcode-vorm (8-14 cijfers), of audio/video bestanden echt bestaan
 in `pack/assets/`, dubbele scene-ids, en dangling `next`-references.
+
+## Puzzel-minigame (`pack/puzzle.js`)
+
+Eerste module uit Sjefs storyboard. Een scene met `puzzle: <pad naar foto>`
+laat de foto niet zien maar als 3x3 puzzel:
+
+```
+scene: puzzel
+puzzle: assets/images/appelmoes.jpg
+audio: assets/audio/appelmoes.mp3
+text: Leg de puzzel, of scan het volgende product
+scan: 8712345670012
+```
+
+Gedrag, zoals besloten op 2026-09-17:
+
+- Stukjes worden aangeboden in een balk onderin, in willekeurige volgorde,
+  vier tegelijk. Legt de bezoeker er een, dan schuift het volgende aan.
+- Een stukje klikt alleen vast op zijn eigen plek. Elders veert het terug naar
+  de balk, zonder foutmelding — er valt niets te verliezen.
+- **De puzzel is een hint, geen horde.** `expectScan` blijft gewoon werken, dus
+  doorscannen naar het volgende artikel kan altijd, ook halverwege. Elk goed
+  gelegd stukje maakt de hint een stukje duidelijker. Is hij af, dan valt het
+  raster weg, staat het beeld heel in het midden en blijft het staan tot de
+  volgende scan.
+- Bij solve gaat er een `puzzleSolved`-bericht naar de native laag (zichtbaar
+  in de HUD), verder doet die daar nog niets mee.
+
+Aantal stukjes per balk en de rastergrootte staan als `SLOTS` en `GRID`
+bovenin `pack/puzzle.js`.
+
+Uitproberen zonder content van Sjef: er staat een testafbeelding klaar in
+`pack/assets/images/puzzel-test.jpg` plus een demo-route in
+`routes/puzzel-demo.txt`. Of kies in de story editor bij een scene het type
+**Puzzel + audio**.
+
+Techniek: geen HTML5 drag-and-drop (doet niets op touch in deze WebView) maar
+losse `touchstart`/`touchmove`/`touchend`-handlers, met muis-events erbij zodat
+de desktop-preview werkt. De stukjes zijn echte legpuzzelvormen (nopjes en
+gaatjes, per puzzel willekeurig) en worden op `<canvas>` uit één bestand
+geknipt, dus er hoeft niets voorgesneden te worden. Canvas omdat CSS
+`clip-path` met curves in Chromium 46 nog niet bestaat. De vorm van een nop
+staat als `KNOB_*` bovenin `pack/puzzle.js`. `puzzle.js` wordt door
+`pack/index.html` op dezelfde manier ingeladen als `runtime.js` (XHR + `eval`,
+zie de comment daar).
+
+## ES5-check
+
+```bash
+npm run pack:check
+```
+
+Parst elk `.js`-bestand in `pack/` alsof je Chromium 46 bent. Een pijlfunctie,
+`const`, template literal of trailing comma sloopt het pack op de MC18N0
+stilletjes — geen foutmelding, gewoon een zwart scherm — en niets daarvan is
+zichtbaar in `tsc`, `eslint` of de build. Draai dit voor je pusht.
 
 ## Lokale preview (geen device nodig)
 
@@ -144,7 +200,8 @@ http://localhost:8934/tools/editor.html
 
 Visuele editor voor `pack/manifest.json`: scenes toevoegen/verwijderen/
 herordenen, per scene een type kiezen — Video (default voor een nieuwe
-scene), of Afbeelding + audio (nooit allebei, zie hierboven) —
+scene), Afbeelding + audio, of Puzzel + audio (nooit twee tegelijk, zie
+hierboven) —
 tekst/verwachte-scan/volgende-scene instellen (dropdowns tonen exact wat er
 nu in `pack/assets/` staat), live preview + scan-simulator ernaast, en een
 "Opslaan"-knop die direct naar `pack/manifest.json` schrijft (met dezelfde

@@ -77,6 +77,8 @@ assets/*.mp3
 assets/*.mp4
 pack/assets/*.mp3
 pack/assets/*.mp4
+# pack-media (ook foto's) blijft lokaal; zsdeploy push zet het op de devices
+pack/assets/
 
 # personal Claude Code permission config, not shared tooling
 .claude/settings.local.json

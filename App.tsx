@@ -93,6 +93,8 @@ function App(): React.JSX.Element {
       }
       if (msg.type === 'sceneEnd') {
         setPackStatus(`scene end: ${msg.payload?.id}`);
+      } else if (msg.type === 'puzzleSolved') {
+        setPackStatus(`puzzle solved: ${msg.payload?.id}`);
       } else if (msg.type === 'wrongScan') {
         setPackStatus(`wrong scan: got ${msg.payload?.got}`);
       } else if (msg.type === 'unlockCradle') {

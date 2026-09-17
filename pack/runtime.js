@@ -49,10 +49,35 @@
     sceneIndex = manifest.scenes.indexOf(scene);
     hideError();
 
-    // video and image are mutually exclusive per scene (enforced at authoring
-    // time by tools/preview-server.js validateManifest) -- video wins if a
-    // hand-edited manifest somehow sets both.
-    if (scene.video) {
+    // Elke scene begint zonder puzzel; een puzzel-scene zet hem zo weer neer.
+    // Zo ruimt doorscannen midden in een puzzel zichzelf op.
+    if (window.ZSPuzzle) {
+      window.ZSPuzzle.unmount();
+    }
+
+    // video, image en puzzle sluiten elkaar uit per scene (afgedwongen bij het
+    // schrijven door tools/build-manifest.js en tools/preview-server.js) --
+    // bij een handmatig gesloopt manifest wint puzzle, dan video.
+    if (scene.puzzle) {
+      video.pause();
+      video.removeAttribute('src');
+      video.style.display = 'none';
+      photo.style.display = 'none';
+      photo.removeAttribute('src');
+      if (window.ZSPuzzle) {
+        // De puzzel is een hint, geen horde: scene.expectScan blijft gewoon
+        // werken, dus de bezoeker kan altijd doorscannen zonder hem af te maken.
+        window.ZSPuzzle.mount(
+          scene.puzzle,
+          function () {
+            post('puzzleSolved', {id: scene.id});
+          },
+          log
+        );
+      } else {
+        log('puzzle.js niet geladen — scene ' + scene.id);
+      }
+    } else if (scene.video) {
       photo.style.display = 'none';
       photo.removeAttribute('src');
       video.style.display = '';

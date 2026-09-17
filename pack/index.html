@@ -38,9 +38,10 @@
     // hand on-device 2026-08-06 — don't revert to <script src>.
     (function () {
       var debugEl = document.getElementById('debug');
-      try {
+
+      function loadLocal(path) {
         var xhr = new XMLHttpRequest();
-        xhr.open('GET', 'runtime.js', false);
+        xhr.open('GET', path, false);
         // file:// responses carry no Content-Type, so force UTF-8 rather than
         // let the WebView guess -- defensive, for whenever this source has
         // non-ASCII text again. (The actual eval SyntaxError hit on-device
@@ -49,12 +50,21 @@
         xhr.overrideMimeType('text/plain; charset=utf-8');
         xhr.send();
         if (!xhr.responseText) {
-          debugEl.textContent = 'runtime.js leeg of niet gevonden (status ' + xhr.status + ')';
-          return;
+          debugEl.textContent = path + ' leeg of niet gevonden (status ' + xhr.status + ')';
+          return false;
         }
         (0, eval)(xhr.responseText);
+        return true;
+      }
+
+      try {
+        // puzzle.js eerst: runtime.js roept ZSPuzzle aan zodra een scene met
+        // een puzzel als eerste scene geladen wordt.
+        if (loadLocal('puzzle.js')) {
+          loadLocal('runtime.js');
+        }
       } catch (e) {
-        debugEl.textContent = 'runtime.js laden MISLUKT: ' + e.message;
+        debugEl.textContent = 'pack laden MISLUKT: ' + e.message;
       }
     })();
   </script>

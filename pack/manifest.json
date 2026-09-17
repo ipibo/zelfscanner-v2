@@ -2,14 +2,18 @@
   "version": "1",
   "scenes": [
     {
-      "id": "scene1",
-      "expectScan": "6340570880252",
+      "id": "Begin",
+      "expectScan": "4717751786716",
       "video": "assets/20260819_104000.mp4"
     },
     {
-      "id": "scene2",
-      "expectScan": "5148193514961",
-      "video": "assets/test.mp4"
+      "id": "scene5",
+      "expectScan": "7067313243090",
+      "puzzle": "assets/images/Photo_on_17-09-2026_at_15.08.jpg"
+    },
+    {
+      "id": "scene6",
+      "expectScan": "7913351912499"
     }
   ]
 }

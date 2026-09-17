@@ -9,7 +9,8 @@
     "start": "react-native start",
     "test": "jest",
     "pack:build": "node tools/build-manifest.js",
-    "pack:preview": "node tools/preview-server.js"
+    "pack:preview": "node tools/preview-server.js",
+    "pack:check": "node tools/check-es5.js"
   },
   "dependencies": {
     "react": "18.2.0",

@@ -44,7 +44,14 @@ function parseRoute(src) {
     if (!current) {
       throw new Error(`route:${lineNo}: "${key}" buiten een scene-blok (mist "scene:" ervoor?)`);
     }
-    if (key === 'audio' || key === 'video' || key === 'image' || key === 'text' || key === 'next') {
+    if (
+      key === 'audio' ||
+      key === 'video' ||
+      key === 'image' ||
+      key === 'puzzle' ||
+      key === 'text' ||
+      key === 'next'
+    ) {
       current[key] = value;
     } else if (key === 'scan') {
       current.expectScan = value;
@@ -74,16 +81,17 @@ function validate(route, assetsBaseDir) {
       errors.push(`scene "${scene.id}": scan "${scene.expectScan}" ziet er niet uit als een barcode (8-14 cijfers)`);
     }
 
-    // Een scene is óf een video, óf een foto met audio-narratie -- nooit
-    // beide tegelijk (geen video+audio, geen video+image).
-    if (scene.video && scene.image) {
-      errors.push(`scene "${scene.id}": video en image kunnen niet allebei tegelijk (kies één)`);
+    // Een scene is óf een video, óf een foto met audio-narratie, óf een
+    // puzzel met audio-narratie -- nooit twee beelddragers tegelijk.
+    const visuals = ['video', 'image', 'puzzle'].filter(f => scene[f]);
+    if (visuals.length > 1) {
+      errors.push(`scene "${scene.id}": ${visuals.join(' en ')} kunnen niet allebei tegelijk (kies één)`);
     }
     if (scene.video && scene.audio) {
-      errors.push(`scene "${scene.id}": video en audio kunnen niet allebei tegelijk (video staat op zichzelf, narratie hoort bij image)`);
+      errors.push(`scene "${scene.id}": video en audio kunnen niet allebei tegelijk (video staat op zichzelf, narratie hoort bij image of puzzle)`);
     }
 
-    ['audio', 'video', 'image'].forEach(field => {
+    ['audio', 'video', 'image', 'puzzle'].forEach(field => {
       if (scene[field]) {
         const full = path.join(assetsBaseDir, scene[field]);
         if (!fs.existsSync(full)) {
@@ -110,6 +118,7 @@ function toManifest(route) {
       if (scene.audio) out.audio = scene.audio;
       if (scene.video) out.video = scene.video;
       if (scene.image) out.image = scene.image;
+      if (scene.puzzle) out.puzzle = scene.puzzle;
       if (scene.text) out.text = scene.text;
       out.expectScan = scene.expectScan || null;
       if (scene.next) out.next = scene.next;

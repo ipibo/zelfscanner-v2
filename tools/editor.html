@@ -691,12 +691,15 @@
           };
           formEl.appendChild(field('id', idInput));
 
-          // type: video XOR (image + audio) -- never combined, see runtime.js
+          // type: video XOR (image + audio) XOR (puzzle + audio) -- nooit
+          // gecombineerd, zie runtime.js
           var mode = sceneMode.has(scene)
             ? sceneMode.get(scene)
             : scene.video
               ? 'video'
-              : 'image';
+              : scene.puzzle
+                ? 'puzzle'
+                : 'image';
 
           function afterAssetChange() {
             loadAssets().then(renderForm);
@@ -716,9 +719,14 @@
               sceneMode.set(scene, value);
               if (value === 'video') {
                 scene.image = undefined;
+                scene.puzzle = undefined;
                 scene.audio = undefined;
+              } else if (value === 'puzzle') {
+                scene.video = undefined;
+                scene.image = undefined;
               } else {
                 scene.video = undefined;
+                scene.puzzle = undefined;
               }
               renderForm();
             };
@@ -731,6 +739,7 @@
           modeWrap.style.cssText = 'display:flex;margin-top:2px;';
           modeWrap.appendChild(modeRadio('video', 'Video'));
           modeWrap.appendChild(modeRadio('image', 'Afbeelding + audio'));
+          modeWrap.appendChild(modeRadio('puzzle', 'Puzzel + audio'));
           formEl.appendChild(field('type', modeWrap));
 
           if (mode === 'video') {
@@ -745,16 +754,37 @@
               }),
             );
           } else {
-            var imageSelect = assetPicker('image', scene.image, function (v) {
-              scene.image = v;
-            });
-            formEl.appendChild(field('afbeelding', imageSelect));
-            formEl.appendChild(
-              uploadRow('image', function (path) {
-                scene.image = path;
-                afterAssetChange();
-              }),
-            );
+            if (mode === 'puzzle') {
+              var puzzleSelect = assetPicker('image', scene.puzzle, function (v) {
+                scene.puzzle = v;
+              });
+              formEl.appendChild(field('puzzel-afbeelding', puzzleSelect));
+              formEl.appendChild(
+                uploadRow('image', function (path) {
+                  scene.puzzle = path;
+                  afterAssetChange();
+                }),
+              );
+              var puzzleHint = document.createElement('div');
+              puzzleHint.style.cssText =
+                'font-size:11px;color:#888;text-transform:none;letter-spacing:normal;line-height:1.4;margin:-2px 0 4px;';
+              puzzleHint.textContent =
+                '3x3 puzzel van deze foto. Stukjes komen in willekeurige volgorde uit de balk ' +
+                'onderin en klikken alleen op hun eigen plek vast. De bezoeker kan altijd ' +
+                'doorscannen zonder hem af te maken.';
+              formEl.appendChild(puzzleHint);
+            } else {
+              var imageSelect = assetPicker('image', scene.image, function (v) {
+                scene.image = v;
+              });
+              formEl.appendChild(field('afbeelding', imageSelect));
+              formEl.appendChild(
+                uploadRow('image', function (path) {
+                  scene.image = path;
+                  afterAssetChange();
+                }),
+              );
+            }
 
             var audioSelect = assetPicker('audio', scene.audio, function (v) {
               scene.audio = v;

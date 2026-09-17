@@ -97,15 +97,16 @@ function validateManifest(manifest) {
     if (scene.expectScan && !BARCODE_RE.test(scene.expectScan)) {
       errors.push(`scene "${scene.id}": scan "${scene.expectScan}" ziet er niet uit als een barcode (8-14 cijfers)`);
     }
-    // Een scene is óf een video, óf een foto met audio-narratie -- nooit
-    // beide tegelijk (geen video+audio, geen video+image).
-    if (scene.video && scene.image) {
-      errors.push(`scene "${scene.id}": video en image kunnen niet allebei tegelijk (kies één)`);
+    // Een scene is óf een video, óf een foto met audio-narratie, óf een
+    // puzzel met audio-narratie -- nooit twee beelddragers tegelijk.
+    const visuals = ['video', 'image', 'puzzle'].filter(f => scene[f]);
+    if (visuals.length > 1) {
+      errors.push(`scene "${scene.id}": ${visuals.join(' en ')} kunnen niet allebei tegelijk (kies één)`);
     }
     if (scene.video && scene.audio) {
-      errors.push(`scene "${scene.id}": video en audio kunnen niet allebei tegelijk (video staat op zichzelf, narratie hoort bij image)`);
+      errors.push(`scene "${scene.id}": video en audio kunnen niet allebei tegelijk (video staat op zichzelf, narratie hoort bij image of puzzle)`);
     }
-    ['audio', 'video', 'image'].forEach(field => {
+    ['audio', 'video', 'image', 'puzzle'].forEach(field => {
       if (scene[field] && !fs.existsSync(path.join(PACK_DIR, scene[field]))) {
         errors.push(`scene "${scene.id}": ${field} bestand niet gevonden: ${scene[field]}`);
       }
