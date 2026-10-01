@@ -253,8 +253,11 @@ const styles = StyleSheet.create({
     right: 4,
   },
   batteryText: {
-    color: 'rgba(255,255,255,0.18)',
-    fontSize: 9,
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 12,
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: {width: 0, height: 1},
+    textShadowRadius: 2,
   },
   hud: {
     position: 'absolute',
