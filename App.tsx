@@ -22,7 +22,7 @@ import {
   View,
 } from 'react-native';
 import WebView from 'react-native-webview';
-import {Cradle} from './src/cradle';
+import {BatteryInfo, Cradle} from './src/cradle';
 import {startAgent} from './src/agent';
 
 const UNLOCK_SECONDS = 10; // firmware-valid 10–30
@@ -47,6 +47,7 @@ function App(): React.JSX.Element {
   const [agentStatus, setAgentStatus] = useState('starting…');
   const [docked, setDocked] = useState<boolean | null>(null);
   const [unlockMsg, setUnlockMsg] = useState('—');
+  const [battery, setBattery] = useState<BatteryInfo | null>(null);
 
   // Report to the dashboard + accept remote unlock commands.
   useEffect(() => {
@@ -57,9 +58,14 @@ function App(): React.JSX.Element {
     Cradle.getDeviceInfo()
       .then(i => setDocked(i.docked))
       .catch(() => {});
+    const unsubBattery = Cradle.onBattery(setBattery);
+    Cradle.getBattery()
+      .then(setBattery)
+      .catch(() => {});
     return () => {
       stop();
       unsubDock();
+      unsubBattery();
     };
   }, []);
 
@@ -186,6 +192,17 @@ function App(): React.JSX.Element {
         style={styles.hiddenInput}
       />
 
+      {/* Battery level, top right. Deliberately near-invisible: only meant for
+          staff checking which scanners need charging, not for visitors. */}
+      {battery && (
+        <View style={styles.battery} pointerEvents="none">
+          <Text style={styles.batteryText}>
+            {battery.level}
+            {battery.charging ? '+' : ''}
+          </Text>
+        </View>
+      )}
+
       {/* Overlay HUD */}
       {SHOW_DEBUG_INFO && (
         <View style={styles.hud} pointerEvents="none">
@@ -229,6 +246,15 @@ const styles = StyleSheet.create({
     height: 1,
     opacity: 0,
     top: -100,
+  },
+  battery: {
+    position: 'absolute',
+    top: 2,
+    right: 4,
+  },
+  batteryText: {
+    color: 'rgba(255,255,255,0.18)',
+    fontSize: 9,
   },
   hud: {
     position: 'absolute',

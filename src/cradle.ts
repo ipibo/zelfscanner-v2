@@ -12,6 +12,7 @@ type CradleNative = {
   isUiUnlockReady(): Promise<boolean>;
   openAccessibilitySettings(): void;
   getDeviceInfo(): Promise<DeviceInfo>;
+  getBattery(): Promise<BatteryInfo>;
 };
 
 export type UnlockResult = {seconds: number; method: 'broadcast' | 'ui'};
@@ -22,6 +23,8 @@ export type DeviceInfo = {
   device: string;
   docked: boolean;
 };
+
+export type BatteryInfo = {level: number; charging: boolean};
 
 export type DockEvent = {docked: boolean; reason: string};
 
@@ -80,6 +83,22 @@ export const Cradle = {
       return () => {};
     }
     const sub = emitter.addListener('cradleDock', cb);
+    return () => sub.remove();
+  },
+
+  getBattery(): Promise<BatteryInfo> {
+    if (!native) {
+      return Promise.reject(new Error('Cradle native module not linked'));
+    }
+    return native.getBattery();
+  },
+
+  /** Subscribe to battery level / charging changes. Returns an unsubscribe fn. */
+  onBattery(cb: (e: BatteryInfo) => void): () => void {
+    if (!emitter) {
+      return () => {};
+    }
+    const sub = emitter.addListener('battery', cb);
     return () => sub.remove();
   },
 };

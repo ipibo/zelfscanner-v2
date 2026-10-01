@@ -55,6 +55,9 @@ public class CradleModule extends ReactContextBaseJavaModule {
             case Intent.ACTION_POWER_DISCONNECTED:
               setDocked(false, action);
               break;
+            case Intent.ACTION_BATTERY_CHANGED:
+              emitBattery(intent);
+              break;
             default:
               break;
           }
@@ -68,6 +71,7 @@ public class CradleModule extends ReactContextBaseJavaModule {
     filter.addAction(CRADLE_OUT);
     filter.addAction(Intent.ACTION_POWER_CONNECTED);
     filter.addAction(Intent.ACTION_POWER_DISCONNECTED);
+    filter.addAction(Intent.ACTION_BATTERY_CHANGED);
     context.registerReceiver(dockReceiver, filter);
     docked = readPluggedFromSticky(context);
   }
@@ -140,6 +144,47 @@ public class CradleModule extends ReactContextBaseJavaModule {
     map.putString("device", Build.DEVICE);
     map.putBoolean("docked", docked);
     promise.resolve(map);
+  }
+
+  /** Battery level (0-100) and whether it is charging — for the tiny corner indicator. */
+  @ReactMethod
+  public void getBattery(Promise promise) {
+    Intent battery =
+        getReactApplicationContext()
+            .registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+    if (battery == null) {
+      promise.reject("E_BATTERY", "no battery status");
+      return;
+    }
+    promise.resolve(batteryMap(battery));
+  }
+
+  // ACTION_BATTERY_CHANGED fires on every small change (voltage, temperature);
+  // only forward it when the shown level or charging state actually changes.
+  private int lastLevel = -1;
+  private boolean lastCharging = false;
+
+  private void emitBattery(Intent intent) {
+    WritableMap map = batteryMap(intent);
+    int level = map.getInt("level");
+    boolean charging = map.getBoolean("charging");
+    if (level == lastLevel && charging == lastCharging) return;
+    lastLevel = level;
+    lastCharging = charging;
+    emit("battery", map);
+  }
+
+  private static WritableMap batteryMap(Intent intent) {
+    int level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+    int scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+    int status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+    WritableMap map = Arguments.createMap();
+    map.putInt("level", scale > 0 ? Math.round(level * 100f / scale) : level);
+    map.putBoolean(
+        "charging",
+        status == BatteryManager.BATTERY_STATUS_CHARGING
+            || status == BatteryManager.BATTERY_STATUS_FULL);
+    return map;
   }
 
   private void setDocked(boolean value, String reason) {
