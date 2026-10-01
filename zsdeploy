@@ -14,7 +14,7 @@ shopt -s nocasematch
 # ============================================================
 ZS_APP_ID="${ZS_APP_ID:-com.zelfscannerv2}"          # package naam van de app. LEEG = niet gezet, faalt duidelijk waar nodig.
 PACK_DIR_DEFAULT="pack"             # lokale content-pack map (override: push [pack-dir])
-DEVICES_FILE="devices.txt"          # regels: "naam ip"   '#' = comment
+DEVICES_FILE="devices.txt"          # regels: "naam ip [mac]"   '#' = comment
 REMOTE_BASE="/sdcard/zelfscanner"
 REMOTE_PACK="$REMOTE_BASE/pack"
 REMOTE_STAGING="$REMOTE_BASE/.staging"
@@ -500,7 +500,7 @@ cmd_pair(){
   touch "$DEVICES_FILE"
   local tmp="$TMPDIR_ZS/devices.txt.new"
   awk -v n="$name" -v ip="$ip_addr" '
-    $1==n { print n" "ip; found=1; next }
+    $1==n { $2=ip; print; found=1; next }
     { print }
     END { if (!found) print n" "ip }
   ' "$DEVICES_FILE" > "$tmp"
