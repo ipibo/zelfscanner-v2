@@ -192,9 +192,9 @@ function App(): React.JSX.Element {
         style={styles.hiddenInput}
       />
 
-      {/* Battery level, top right. Deliberately near-invisible: only meant for
-          staff checking which scanners need charging, not for visitors. */}
-      {battery && (
+      {/* Battery level, top right, only while docked. Deliberately subtle:
+          meant for staff checking the charging scanners, not for visitors. */}
+      {docked && battery && (
         <View style={styles.battery} pointerEvents="none">
           <Text style={styles.batteryText}>
             {battery.level}
