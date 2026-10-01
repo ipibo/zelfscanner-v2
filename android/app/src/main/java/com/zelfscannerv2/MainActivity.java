@@ -16,6 +16,8 @@ import com.zelfscannerv2.kiosk.KioskController;
 public class MainActivity extends ReactActivity {
 
   private KioskController kioskController;
+  // Held for the activity's lifetime: releasing it re-enables the keyguard.
+  private KeyguardManager.KeyguardLock keyguardLock;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -39,6 +41,16 @@ public class MainActivity extends ReactActivity {
       KeyguardManager keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
       if (keyguardManager != null) {
         keyguardManager.requestDismissKeyguard(this, null);
+      }
+    } else {
+      // MC18N0 (API 22): the swipe keyguard re-engages after a bottom-edge swipe and
+      // renders as a black screen with nothing to swipe. Settings is blocked by the
+      // MX AccessMgr profile, so "Screen lock: None" can't be set by hand; turn the
+      // (non-secure) keyguard off from here instead.
+      KeyguardManager keyguardManager = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+      if (keyguardManager != null) {
+        keyguardLock = keyguardManager.newKeyguardLock("zelfscanner-kiosk");
+        keyguardLock.disableKeyguard();
       }
     }
     getWindow()
