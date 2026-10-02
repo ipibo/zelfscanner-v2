@@ -14,7 +14,7 @@ shopt -s nocasematch
 # ============================================================
 ZS_APP_ID="${ZS_APP_ID:-com.zelfscannerv2}"          # package naam van de app. LEEG = niet gezet, faalt duidelijk waar nodig.
 PACK_DIR_DEFAULT="pack"             # lokale content-pack map (override: push [pack-dir])
-DEVICES_FILE="devices.txt"          # regels: "naam ip [story]"   '#' = comment
+DEVICES_FILE="devices.txt"          # regels: "naam ip [story] [sn=serienummer]"   '#' = comment
 STORIES_DIR="stories"               # story <naam> = stories/<naam>.json; geen story = manifest uit de pack-dir
 REMOTE_BASE="/sdcard/zelfscanner"
 REMOTE_PACK="$REMOTE_BASE/pack"
@@ -54,29 +54,96 @@ require_adb(){
 # ============================================================
 # devices.txt
 # ============================================================
-DEV_NAMES=(); DEV_IPS=(); DEV_STORIES=()
+# Een device wordt herkend aan zijn serienummer (getprop ro.serialno, sn=…)
+# en pas als dat er niet staat aan zijn IP. IP's verschuiven via DHCP, het
+# serienummer niet: zo blijft de story aan het juiste device hangen. Zie
+# list_targets, die ook een verschoven IP in devices.txt bijwerkt.
+DEV_NAMES=(); DEV_IPS=(); DEV_STORIES=(); DEV_SNS=()
 load_devices_file(){
-  DEV_NAMES=(); DEV_IPS=(); DEV_STORIES=()
+  DEV_NAMES=(); DEV_IPS=(); DEV_STORIES=(); DEV_SNS=()
   [ -f "$DEVICES_FILE" ] || return 0
-  local line n ip story
+  local line n ip story sn tok
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       ''|'#'*) continue ;;
     esac
     n="$(printf '%s' "$line" | awk '{print $1}')"
     ip="$(printf '%s' "$line" | awk '{print $2}')"
-    story="$(printf '%s' "$line" | awk '{print $3}')"
     [ -n "$n" ] && [ -n "$ip" ] || continue
-    DEV_NAMES+=("$n"); DEV_IPS+=("$ip"); DEV_STORIES+=("${story:-standaard}")
+    story=""; sn=""
+    for tok in $(printf '%s' "$line" | awk '{for (i = 3; i <= NF; i++) print $i}'); do
+      case "$tok" in
+        sn=*) sn="${tok#sn=}" ;;
+        *) [ -z "$story" ] && story="$tok" ;;
+      esac
+    done
+    DEV_NAMES+=("$n"); DEV_IPS+=("$ip"); DEV_STORIES+=("${story:-standaard}"); DEV_SNS+=("$sn")
   done < "$DEVICES_FILE"
 }
 
-name_for_ip(){
+# index in DEV_* voor een naam, of -1
+idx_for_name(){
   local target="$1" i
-  for i in "${!DEV_IPS[@]}"; do
-    [ "${DEV_IPS[$i]}" = "$target" ] && { printf '%s' "${DEV_NAMES[$i]}"; return 0; }
+  for i in "${!DEV_NAMES[@]}"; do
+    [ "${DEV_NAMES[$i]}" = "$target" ] && { printf '%s' "$i"; return 0; }
+  done
+  printf '%s' "-1"
+}
+
+name_for_serial(){
+  local target="$1" i
+  [ -n "$target" ] || { printf '%s' "-"; return 0; }
+  for i in "${!DEV_SNS[@]}"; do
+    [ "${DEV_SNS[$i]}" = "$target" ] && { printf '%s' "${DEV_NAMES[$i]}"; return 0; }
   done
   printf '%s' "-"
+}
+
+# Op IP, maar niet als die regel een ander serienummer heeft: dan is het IP
+# inmiddels van een ander device.
+name_for_ip(){
+  local target="$1" hw="${2:-}" i
+  for i in "${!DEV_IPS[@]}"; do
+    [ "${DEV_IPS[$i]}" = "$target" ] || continue
+    [ -n "$hw" ] && [ -n "${DEV_SNS[$i]}" ] && [ "${DEV_SNS[$i]}" != "$hw" ] && continue
+    printf '%s' "${DEV_NAMES[$i]}"; return 0
+  done
+  printf '%s' "-"
+}
+
+# Naam van een live device: eerst op serienummer, dan op IP.
+resolve_name(){
+  local hw="$1" ip="$2" name
+  name="$(name_for_serial "$hw")"
+  [ "$name" = "-" ] && name="$(name_for_ip "$ip" "$hw")"
+  printf '%s' "$name"
+}
+
+# Zet ip en serienummer van een device in devices.txt (regel op naam), story
+# en volgorde blijven staan. Bestaat de naam niet, dan komt er een regel bij.
+# Leeg sn = het bestaande serienummer houden.
+update_device_entry(){
+  local name="$1" ip="$2" sn="${3:-}" tmp="$TMPDIR_ZS/devices.txt.new"
+  touch "$DEVICES_FILE"
+  awk -v n="$name" -v ip="$ip" -v newsn="$sn" '
+    $1 == n {
+      story = ""; oldsn = ""
+      for (i = 3; i <= NF; i++) {
+        if ($i ~ /^sn=/) oldsn = substr($i, 4)
+        else if (story == "") story = $i
+      }
+      useip = (ip != "") ? ip : $2
+      line = n " " useip
+      if (story != "") line = line " " story
+      s = (newsn != "") ? newsn : oldsn
+      if (s != "") line = line " sn=" s
+      print line; found = 1; next
+    }
+    { print }
+    END { if (!found) print n " " ip ((newsn != "") ? " sn=" newsn : "") }
+  ' "$DEVICES_FILE" > "$tmp"
+  mv "$tmp" "$DEVICES_FILE"
+  load_devices_file
 }
 
 # story voor een device-naam ("standaard" als niet in devices.txt, bv. usb)
@@ -122,19 +189,26 @@ scan_adb_devices(){
   done < <(adb devices </dev/null)
 }
 
-# gefilterde, live doelgroep: alleen status "device", optioneel op model
-T_SERIAL=(); T_NAME=(); T_MODEL=(); T_RELEASE=(); T_ABI=()
+# gefilterde, live doelgroep: alleen status "device", optioneel op model.
+# - Naam op serienummer (ro.serialno), anders op IP; zie load_devices_file.
+# - Hangt een device zowel aan USB als aan wifi, dan telt het één keer, via
+#   wifi (twee pushes tegelijk naar één device = corrupt pack).
+# - Bekend device op een nieuw IP: devices.txt wordt bijgewerkt, net als een
+#   ontbrekend serienummer bij een device dat op IP herkend werd.
+T_SERIAL=(); T_NAME=(); T_MODEL=(); T_RELEASE=(); T_ABI=(); T_HW=()
 list_targets(){
   local model_filter="${1:-}"
-  T_SERIAL=(); T_NAME=(); T_MODEL=(); T_RELEASE=(); T_ABI=()
+  T_SERIAL=(); T_NAME=(); T_MODEL=(); T_RELEASE=(); T_ABI=(); T_HW=()
+  load_devices_file
   scan_adb_devices
-  local i serial status ip name model release abi
+  local i j serial status ip name model release abi hw dup idx
   for i in "${!ALL_SERIALS[@]}"; do
     serial="${ALL_SERIALS[$i]}"; status="${ALL_STATUS[$i]}"
     [ "$status" = "device" ] || continue
     model="$(get_prop "$serial" ro.product.model)"
     release="$(get_prop "$serial" ro.build.version.release)"
     abi="$(get_prop "$serial" ro.product.cpu.abi)"
+    hw="$(get_prop "$serial" ro.serialno)"
     if [ -n "$model_filter" ]; then
       case "$model" in
         *"$model_filter"*) : ;;
@@ -142,9 +216,33 @@ list_targets(){
       esac
     fi
     ip="${serial%%:*}"
-    name="$(name_for_ip "$ip")"
+
+    # zelfde device al gezien (usb + wifi)? dan wifi houden
+    dup=-1
+    if [ -n "$hw" ]; then
+      for j in "${!T_HW[@]}"; do
+        [ "${T_HW[$j]}" = "$hw" ] && { dup="$j"; break; }
+      done
+    fi
+
+    name="$(resolve_name "$hw" "$ip")"
+    if [ "$name" != "-" ] && [ "$serial" != "$ip" ]; then
+      idx="$(idx_for_name "$name")"
+      if [ "${DEV_IPS[$idx]}" != "$ip" ] || [ -z "${DEV_SNS[$idx]}" ]; then
+        [ "${DEV_IPS[$idx]}" != "$ip" ] && info "$name: nieuw IP ${DEV_IPS[$idx]} -> $ip (devices.txt bijgewerkt)" >&2
+        update_device_entry "$name" "$ip" "$hw"
+      fi
+    fi
     [ "$serial" = "$ip" ] && [ "$name" = "-" ] && name="usb"
-    T_SERIAL+=("$serial"); T_NAME+=("$name"); T_MODEL+=("$model"); T_RELEASE+=("$release"); T_ABI+=("$abi")
+
+    if [ "$dup" -ge 0 ]; then
+      if [ "$serial" != "$ip" ]; then
+        T_SERIAL[$dup]="$serial"; T_NAME[$dup]="$name"
+      fi
+      warn "$name (${hw}) hangt aan USB en wifi — telt één keer, via wifi"
+      continue
+    fi
+    T_SERIAL+=("$serial"); T_NAME+=("$name"); T_MODEL+=("$model"); T_RELEASE+=("$release"); T_ABI+=("$abi"); T_HW+=("$hw")
   done
 }
 
@@ -152,12 +250,12 @@ report_skipped(){
   local s
   if [ "${#OFFLINE_SERIALS[@]}" -gt 0 ]; then
     for s in "${OFFLINE_SERIALS[@]}"; do
-      warn "overgeslagen (offline): $s ($(name_for_ip "${s%%:*}"))"
+      warn "overgeslagen (offline): $s ($(name_for_ip "${s%%:*}" ""))"
     done
   fi
   if [ "${#UNAUTH_SERIALS[@]}" -gt 0 ]; then
     for s in "${UNAUTH_SERIALS[@]}"; do
-      warn "overgeslagen (unauthorized): $s ($(name_for_ip "${s%%:*}"))"
+      warn "overgeslagen (unauthorized): $s ($(name_for_ip "${s%%:*}" ""))"
     done
   fi
 }
@@ -487,25 +585,73 @@ cmd_devices(){
     case "$1" in --model) shift; model_filter="${1:-}" ;; *) err "onbekende optie: $1"; exit 1 ;; esac
     shift
   done
+  load_devices_file
   scan_adb_devices
   info "${C_BOLD}devices${C_RST} (adb devices, gekoppeld aan $DEVICES_FILE)"
-  printf '%-20s %-10s %-14s %-10s %-8s\n' "SERIAL" "NAAM" "STATUS" "MODEL" "ANDROID"
-  local i serial status ip name model release
+  printf '%-20s %-10s %-14s %-10s %-8s %s\n' "SERIAL" "NAAM" "STATUS" "MODEL" "ANDROID" "SERIENUMMER"
+  local i serial status ip name model release hw unknown=0
   for i in "${!ALL_SERIALS[@]}"; do
     serial="${ALL_SERIALS[$i]}"; status="${ALL_STATUS[$i]}"
-    ip="${serial%%:*}"; name="$(name_for_ip "$ip")"
+    ip="${serial%%:*}"
     if [ "$status" = "device" ]; then
       model="$(get_prop "$serial" ro.product.model)"
       release="$(get_prop "$serial" ro.build.version.release)"
+      hw="$(get_prop "$serial" ro.serialno)"
       if [ -n "$model_filter" ]; then
         case "$model" in *"$model_filter"*) : ;; *) continue ;; esac
       fi
-      printf '%-20s %-10s %s%-14s%s %-10s %-8s\n' "$serial" "$name" "$C_GRN" "$status" "$C_RST" "$model" "$release"
+      name="$(resolve_name "$hw" "$ip")"
+      [ "$name" = "-" ] && [ "$serial" != "$ip" ] && unknown=$((unknown+1))
+      printf '%-20s %-10s %s%-14s%s %-10s %-8s %s\n' "$serial" "$name" "$C_GRN" "$status" "$C_RST" "$model" "$release" "$hw"
     else
       [ -n "$model_filter" ] && continue
-      printf '%-20s %-10s %s%-14s%s %-10s %-8s\n' "$serial" "$name" "$C_YLW" "$status" "$C_RST" "-" "-"
+      name="$(name_for_ip "$ip" "")"
+      printf '%-20s %-10s %s%-14s%s %-10s %-8s %s\n' "$serial" "$name" "$C_YLW" "$status" "$C_RST" "-" "-" "-"
     fi
   done
+  [ "$unknown" -gt 0 ] && info "$unknown device(s) zonder naam — geef ze er een met: $SCRIPT_NAME adopt"
+  return 0
+}
+
+# ============================================================
+# adopt: onbekende live devices een naam + serienummer geven
+# ============================================================
+# Hergebruikt eerst "dode" regels uit devices.txt (geen serienummer, IP niet
+# meer live, zelfde soort: mc voor MC18N0, ps voor PS20J), daarna mcN/psN.
+# Welke fysieke scanner welke oude naam krijgt is dan willekeurig, maar vanaf
+# nu blijft de koppeling vast (op serienummer).
+cmd_adopt(){
+  list_targets ""
+  local i j serial ip prefix name cand live_ips="" n adopted=0
+  for i in "${!T_SERIAL[@]}"; do
+    serial="${T_SERIAL[$i]}"; ip="${serial%%:*}"
+    [ "$serial" != "$ip" ] && live_ips="$live_ips $ip "
+  done
+  for i in "${!T_SERIAL[@]}"; do
+    serial="${T_SERIAL[$i]}"; ip="${serial%%:*}"
+    [ "${T_NAME[$i]}" = "-" ] || continue
+    [ "$serial" != "$ip" ] || continue # alleen wifi: devices.txt heeft een IP nodig
+    case "${T_MODEL[$i]}" in PS*) prefix="ps" ;; *) prefix="mc" ;; esac
+    name=""
+    for j in "${!DEV_NAMES[@]}"; do
+      cand="${DEV_NAMES[$j]}"
+      case "$cand" in "$prefix"[0-9]*) : ;; *) continue ;; esac
+      [ -z "${DEV_SNS[$j]}" ] || continue
+      case "$live_ips" in *" ${DEV_IPS[$j]} "*) continue ;; esac
+      name="$cand"; break
+    done
+    if [ -z "$name" ]; then
+      n=1
+      while [ "$(idx_for_name "$prefix$n")" != "-1" ]; do n=$((n+1)); done
+      name="$prefix$n"
+    fi
+    update_device_entry "$name" "$ip" "${T_HW[$i]}"
+    T_NAME[$i]="$name"
+    ok "$name -> $ip (sn ${T_HW[$i]}, ${T_MODEL[$i]})"
+    adopted=$((adopted+1))
+  done
+  [ "$adopted" -eq 0 ] && info "alle live devices hebben al een naam."
+  return 0
 }
 
 # ============================================================
@@ -536,16 +682,11 @@ cmd_pair(){
   fi
 
   info "wifi-IP: $ip_addr"
-  touch "$DEVICES_FILE"
-  local tmp="$TMPDIR_ZS/devices.txt.new"
-  awk -v n="$name" -v ip="$ip_addr" '
-    $1==n { print n" "ip ($3 != "" ? " "$3 : ""); found=1; next }
-    { print }
-    END { if (!found) print n" "ip }
-  ' "$DEVICES_FILE" > "$tmp"
-  mv "$tmp" "$DEVICES_FILE"
+  local hw
+  hw="$(adb -d shell getprop ro.serialno </dev/null 2>/dev/null | tr -d '\r\n')" || true
+  update_device_entry "$name" "$ip_addr" "$hw"
 
-  ok "'$name' -> $ip_addr:$ADB_PORT weggeschreven in $DEVICES_FILE"
+  ok "'$name' -> $ip_addr:$ADB_PORT (sn ${hw:-?}) weggeschreven in $DEVICES_FILE"
   info "kabel kan eruit. draai nu: $SCRIPT_NAME connect"
 }
 
@@ -694,7 +835,8 @@ $SCRIPT_NAME — deploy zelfscanner content-pack + app naar Zebra devices (MC18N
 gebruik:
   $SCRIPT_NAME pair <naam>            koppel het USB-verbonden device, schrijf naam+ip in $DEVICES_FILE
   $SCRIPT_NAME connect                adb connect naar alle devices in $DEVICES_FILE
-  $SCRIPT_NAME devices                toon wat adb ziet + naam/model/android-versie
+  $SCRIPT_NAME devices                toon wat adb ziet + naam/model/android-versie/serienummer
+  $SCRIPT_NAME adopt                  geef live devices zonder naam een naam + serienummer in $DEVICES_FILE
   $SCRIPT_NAME push [pack-dir]        push content-pack (default: $PACK_DIR_DEFAULT/), atomische swap
   $SCRIPT_NAME status                 versie + bestandscount per device, vlagt afwijkingen
   $SCRIPT_NAME install <apk>          adb install -r naar alle (gefilterde) devices
@@ -728,6 +870,7 @@ main(){
     pair) cmd_pair "$@" ;;
     connect) cmd_connect "$@" ;;
     devices) cmd_devices "$@" ;;
+    adopt) cmd_adopt "$@" ;;
     push) cmd_push "$@" ;;
     status) cmd_status "$@" ;;
     install) cmd_install "$@" ;;

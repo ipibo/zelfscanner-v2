@@ -234,7 +234,14 @@
             return r.json();
           })
           .then(function (manifest) {
-            var NAMES = {image: 'afbeelding', puzzle: 'puzzel', video: 'video', audio: 'audiotour'};
+            var NAMES = {
+              image: 'afbeelding',
+              puzzle: 'puzzel',
+              video: 'video',
+              audio: 'audiotour',
+              narrator: 'verteller',
+              page: 'html-pagina',
+            };
             var cards = (manifest.stops || [])
               .filter(function (s) {
                 return !!s.scan;
@@ -248,7 +255,11 @@
                   meta: (hint || '?') + ' → ' + (reward || '?'),
                 };
               });
-            // reset-code vooraan, als eigen kaart
+            // start- en reset-code vooraan, als eigen kaart
+            var startScan = manifest.splash && manifest.splash.startScan;
+            if (startScan) {
+              cards.unshift({id: 'START', code: startScan, meta: 'start de story vanaf het splash-scherm'});
+            }
             if (manifest.resetScan) {
               cards.unshift({
                 id: 'RESET',

@@ -609,6 +609,7 @@
             instruction: {},
             intro: {},
             audiotour: {},
+            wrongScan: {},
             stops: [],
             end: {},
           };
@@ -624,29 +625,54 @@
         // JSON van het laatst geladen/opgeslagen manifest, om niet-opgeslagen
         // wijzigingen te zien vóór je van story wisselt.
         var savedJson = null;
-        var assets = {video: [], audio: [], image: []};
+        var assets = {video: [], audio: [], image: [], page: []};
         // Vaste onderdelen van de lijst; stops hebben index 0 en hoger.
         var SPLASH = -1;
         var INSTRUCTION = -2;
         var AUDIOTOUR = -3;
         var END = -4;
         var INTRO = -5;
+        var WRONG = -6;
+        var START = 'start'; // alleen voor randomBarcode: de start-barcode zelf
         // zelfde defaults als pack/runtime.js en pack/end.js
         var DEFAULT_INSTRUCTION_TEXT = 'Keep the scanner next to your ear';
         var DEFAULT_INSTRUCTION_SECONDS = 5;
         var DEFAULT_END_TEXT = 'Please gather at the self-checkout';
         var DEFAULT_COLOR = '#ffff5c';
+        // zelfde defaults als pack/runtime.js, pack/help.js en pack/page.js
+        var DEFAULT_WRONG_TEXT = 'VERKEERD PRODUCT';
+        var DEFAULT_HELP_BUTTON = 'I need a hint';
+        var DEFAULT_PAGE_SECONDS = 10;
         var HINT_TYPES = [
           ['image', 'Afbeelding'],
           ['puzzle', 'Puzzel'],
           ['video', 'Video'],
+          ['narrator', 'Verteller'],
+          ['page', 'HTML-pagina'],
         ];
         var REWARD_TYPES = [
           ['audio', 'Audiotour'],
           ['video', 'Video'],
+          ['page', 'HTML-pagina'],
         ];
-        var KIND = {image: 'image', puzzle: 'image', video: 'video', audio: 'audio'};
-        var SHORT = {image: 'afb', puzzle: 'puzzel', video: 'video', audio: 'audio'};
+        var KIND = {image: 'image', puzzle: 'image', video: 'video', audio: 'audio', narrator: 'image', page: 'page'};
+        var SHORT = {
+          image: 'afb',
+          puzzle: 'puzzel',
+          video: 'video',
+          audio: 'audio',
+          narrator: 'ballon',
+          page: 'html',
+        };
+        // Binnenkomst-animaties, zelfde namen als pack/fx.js.
+        var ANIMATIONS = [
+          ['', 'geen'],
+          ['fade', 'invaden'],
+          ['slide', 'van onder omhoog schuiven'],
+          ['drop', 'van boven naar beneden'],
+          ['zoom', 'inzoomen (pop)'],
+          ['bounce', 'omhoog stuiteren'],
+        ];
         var activeIndex = SPLASH;
         // Bij een stop: laat de preview de hint of de beloning zien.
         var previewPart = 'hint';
@@ -683,6 +709,7 @@
           if (activeIndex === INTRO) return {kind: 'intro'};
           if (activeIndex === AUDIOTOUR) return {kind: 'audiotour'};
           if (activeIndex === END) return {kind: 'end'};
+          if (activeIndex === WRONG) return {kind: 'wrong'};
           return {kind: previewPart, index: activeIndex};
         }
 
@@ -717,6 +744,7 @@
             if (s !== self && s.scan) used[s.scan] = true;
           });
           if (self !== SPLASH && manifest.resetScan) used[manifest.resetScan] = true;
+          if (self !== START && manifest.splash && manifest.splash.startScan) used[manifest.splash.startScan] = true;
           var code;
           do {
             code = '';
@@ -726,7 +754,9 @@
         }
 
         function isIncomplete(stop) {
-          return !stop.scan || !(stop.hint && stop.hint.src) || !(stop.reward && stop.reward.src);
+          var hint = stop.hint || {};
+          var hintOk = hint.type === 'narrator' ? !!(hint.text && hint.text.trim()) : !!hint.src;
+          return !stop.scan || !hintOk || !(stop.reward && stop.reward.src);
         }
 
         // ---- data loading ----
@@ -752,7 +782,7 @@
                   manifest[k] = data[k];
                 });
               }
-              ['splash', 'instruction', 'intro', 'audiotour', 'end'].forEach(function (k) {
+              ['splash', 'instruction', 'intro', 'audiotour', 'wrongScan', 'end'].forEach(function (k) {
                 if (!manifest[k] || typeof manifest[k] !== 'object') manifest[k] = {};
               });
               if (!Array.isArray(manifest.stops)) manifest.stops = [];
@@ -837,6 +867,7 @@
           listItem('Luisterinstructie', 'start + vóór audio', INSTRUCTION, {fixed: true});
           listItem('Intro-audio', manifest.intro.src ? 'vóór stop 1' : 'geen', INTRO, {fixed: true});
           listItem('Audiotour-scherm', 'alle audio', AUDIOTOUR, {fixed: true});
+          listItem('Verkeerde scan', 'melding + hulp', WRONG, {fixed: true});
 
           manifest.stops.forEach(function (stop, i) {
             var incomplete = isIncomplete(stop);
@@ -944,8 +975,12 @@
 
           var fileInput = document.createElement('input');
           fileInput.type = 'file';
-          fileInput.accept =
-            kind === 'video' ? 'video/*' : kind === 'image' ? 'image/*' : 'audio/*';
+          fileInput.accept = {
+            video: 'video/*',
+            image: 'image/*',
+            audio: 'audio/*',
+            page: '.html,.htm,text/html',
+          }[kind];
 
           var status = document.createElement('span');
           status.className = 'upload-status';
@@ -970,6 +1005,7 @@
                     '✓ ' +
                     res.data.path +
                     (res.data.deduped ? ' (al aanwezig)' : '') +
+                    (res.data.replaced ? ' (vervangen)' : '') +
                     (res.data.normalized ? ' (rotatie/codec gefixt)' : '');
                   status.className = 'upload-status ok';
                   onUploaded(res.data.path);
@@ -1047,8 +1083,8 @@
             uploadRow(kind, function (path) {
               obj[key] = path;
               loadAssets().then(function () {
+                onChange(); // eerst: zet bv. stop.help in het manifest
                 renderAll();
-                onChange();
               });
             }),
           );
@@ -1104,6 +1140,24 @@
           );
         }
 
+        function checkboxField(parent, labelText, obj, key, hint, onChange) {
+          var lbl = document.createElement('label');
+          lbl.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;color:#ccc;cursor:pointer;';
+          var box = document.createElement('input');
+          box.type = 'checkbox';
+          box.style.width = 'auto';
+          box.checked = !!obj[key];
+          box.onchange = function () {
+            if (box.checked) obj[key] = true;
+            else delete obj[key];
+            onChange();
+          };
+          lbl.appendChild(box);
+          lbl.appendChild(document.createTextNode(labelText));
+          parent.appendChild(lbl);
+          if (hint) parent.appendChild(hintEl(hint));
+        }
+
         function barcodeField(parent, labelText, value, self, onChange, hint) {
           var row = document.createElement('div');
           row.className = 'row';
@@ -1156,6 +1210,27 @@
             },
             'Werkt altijd: terug naar dit scherm, alle voortgang weg. ' +
               'Printbaar via "Barcodes (PDF)". Mag niet gelijk zijn aan een product-barcode.',
+          );
+          barcodeField(
+            formEl,
+            'start-barcode (optioneel)',
+            splash.startScan,
+            START,
+            function (v) {
+              if (v) splash.startScan = v;
+              else delete splash.startScan;
+              pushManifest();
+            },
+            'Scannen op dit scherm start de story, net als swipen ("Scan the test code to start!"). ' +
+              'Leeg = alleen swipen.',
+          );
+          checkboxField(
+            formEl,
+            'geen slider, afbeelding beeldvullend',
+            splash,
+            'fullImage',
+            'Als de tekst al in de afbeelding staat. Starten kan dan alleen met de start-barcode.',
+            syncPreview,
           );
         }
 
@@ -1255,14 +1330,34 @@
           );
           colorField(formEl, 'balk-kleur', end, 'barColor', syncPreview);
           textField(formEl, 'balk-tekst', end, 'barText', DEFAULT_END_TEXT, true, syncPreview);
+          checkboxField(
+            formEl,
+            'geen balk, afbeelding beeldvullend',
+            end,
+            'fullImage',
+            'Als de tekst al in de afbeelding staat. Alleen met een afbeelding.',
+            syncPreview,
+          );
         }
 
-        // Hint of beloning: type kiezen, dan het bestand.
-        function renderPart(stop, key, title, types, help, playLabel) {
-          var part = stop[key];
-          var box = document.createElement('div');
-          box.className = 'part' + (previewPart === key ? ' previewing' : '');
+        function renderWrongForm() {
+          var wrong = manifest.wrongScan;
+          heading(
+            formEl,
+            'Verkeerde scan',
+            'Wat de bezoeker ziet als hij tijdens een hint het verkeerde product scant. ' +
+              'Bij een verteller komt de melding in de tekstballon (oranje), met het raadsel ' +
+              'eronder; anders een rode laag van 1,5 sec. Heeft de stop "hulp", dan verschijnt ' +
+              'daarna een knop die de hulp-kaart opent. Geldt voor alle stops van deze story.',
+          );
+          textField(formEl, 'melding', wrong, 'text', DEFAULT_WRONG_TEXT, true, syncPreview);
+          textField(formEl, 'tekst op de hulp-knop', wrong, 'buttonText', DEFAULT_HELP_BUTTON, false, syncPreview);
+          formEl.appendChild(
+            smallButton('toon', 'stop 1 met een verkeerde scan in de preview', syncPreview),
+          );
+        }
 
+        function partHead(box, title, key, playLabel) {
           var head = document.createElement('div');
           head.className = 'part-head';
           var h2 = document.createElement('h2');
@@ -1276,6 +1371,80 @@
             }),
           );
           box.appendChild(head);
+        }
+
+        function animationField(box, part, key, labelText, hint) {
+          var sel = document.createElement('select');
+          ANIMATIONS.forEach(function (a) {
+            var opt = document.createElement('option');
+            opt.value = a[0];
+            opt.textContent = a[1];
+            sel.appendChild(opt);
+          });
+          sel.value = part.animation && part.animation !== 'none' ? part.animation : '';
+          // verteller: leeg = 'slide' (pack/narrator.js), dus 'geen' expliciet
+          if (part.type === 'narrator' && part.animation === undefined) sel.value = 'slide';
+          sel.onchange = function () {
+            if (part.type === 'narrator') part.animation = sel.value || 'none';
+            else part.animation = sel.value || undefined;
+            if (previewPart === key) syncPreview();
+          };
+          box.appendChild(field(labelText, sel, hint));
+        }
+
+        // Tekstvak zonder "leeg = …"-default (de tekst is de inhoud).
+        function plainTextArea(box, labelText, obj, key, placeholder, hint, onChange) {
+          var input = document.createElement('textarea');
+          input.value = obj[key] || '';
+          input.placeholder = placeholder;
+          input.oninput = function () {
+            obj[key] = input.value || undefined;
+            onChange();
+          };
+          box.appendChild(field(labelText, input, hint));
+        }
+
+        // Hulp-kaart na een verkeerde scan: foto (vervaagd) + tip.
+        function renderHelpPart(stop) {
+          var box = document.createElement('div');
+          box.className = 'part' + (previewPart === 'help' ? ' previewing' : '');
+          partHead(box, 'Hulp (optioneel)', 'help', 'toon');
+          box.appendChild(
+            hintEl(
+              'Na een verkeerde scan verschijnt onderin de knop "' +
+                (manifest.wrongScan.buttonText || DEFAULT_HELP_BUTTON) +
+                '". Die opent een kaart met deze foto (vervaagd) en tekst. Leeg = geen knop.',
+            ),
+          );
+          // Pas in het manifest zodra er iets in staat: alleen openen mag de
+          // story niet "gewijzigd" maken.
+          var help = stop.help && typeof stop.help === 'object' ? stop.help : {};
+          function changed() {
+            if (help.image || help.text) stop.help = help;
+            else delete stop.help;
+            renderSceneList();
+            if (previewPart === 'help') syncPreview();
+          }
+          fileField(box, 'foto', 'image', help, 'image', null, changed);
+          plainTextArea(
+            box,
+            'tip',
+            help,
+            'text',
+            "We're looking for this product, found in the coffee section.",
+            'Enter = nieuwe regel.',
+            changed,
+          );
+          formEl.appendChild(box);
+        }
+
+        // Hint of beloning: type kiezen, dan het bestand.
+        function renderPart(stop, key, title, types, help, playLabel) {
+          var part = stop[key];
+          var box = document.createElement('div');
+          box.className = 'part' + (previewPart === key ? ' previewing' : '');
+
+          partHead(box, title, key, playLabel);
 
           var radios = document.createElement('div');
           radios.className = 'radio-row';
@@ -1287,7 +1456,15 @@
             r.checked = part.type === t[0];
             r.onchange = function () {
               // afbeelding <-> puzzel houdt het bestand, verder past het niet
-              if (KIND[part.type] !== KIND[t[0]]) part.src = undefined;
+              var keep = /^(image|puzzle)$/.test(part.type) && /^(image|puzzle)$/.test(t[0]);
+              if (!keep) part.src = undefined;
+              if (t[0] !== 'narrator') {
+                delete part.text;
+                delete part.background;
+                if (part.animation === 'none') delete part.animation;
+              }
+              if (t[0] !== 'page') delete part.seconds;
+              if (t[0] === 'puzzle' || (key === 'reward' && t[0] !== 'page')) delete part.animation;
               part.type = t[0];
               renderAll();
               if (previewPart === key) syncPreview();
@@ -1298,10 +1475,71 @@
           });
           box.appendChild(field('type', radios));
 
-          fileField(box, 'bestand', KIND[part.type], part, 'src', help[part.type], function () {
+          function changed() {
             renderSceneList();
             if (previewPart === key) syncPreview();
-          });
+          }
+
+          if (part.type === 'narrator') {
+            box.appendChild(hintEl(help.narrator));
+            plainTextArea(
+              box,
+              'tekst in de ballon',
+              part,
+              'text',
+              'The product we are looking for is a 15g herb that tastes like soap for some people.',
+              'Het raadsel. Enter = nieuwe regel.',
+              changed,
+            );
+            fileField(
+              box,
+              'figuurtje (afbeelding, optioneel)',
+              'image',
+              part,
+              'src',
+              'Beeldvullende PNG met transparantie (480x800), komt met de animatie binnen.',
+              changed,
+            );
+            fileField(
+              box,
+              'achtergrond (afbeelding, optioneel)',
+              'image',
+              part,
+              'background',
+              'Leeg = lichtblauw.',
+              changed,
+            );
+            animationField(box, part, key, 'animatie figuurtje');
+            formEl.appendChild(box);
+            return;
+          }
+
+          fileField(box, 'bestand', KIND[part.type], part, 'src', help[part.type], changed);
+
+          if (part.type === 'page' && key === 'reward') {
+            var secInput = document.createElement('input');
+            secInput.type = 'number';
+            secInput.min = '1';
+            secInput.max = '600';
+            secInput.placeholder = String(DEFAULT_PAGE_SECONDS);
+            secInput.value = typeof part.seconds === 'number' ? String(part.seconds) : '';
+            secInput.oninput = function () {
+              var v = secInput.value.trim();
+              part.seconds = v === '' ? undefined : Number(v);
+              pushManifest();
+            };
+            box.appendChild(
+              field(
+                'duur (seconden)',
+                secInput,
+                'Daarna de volgende stop. Leeg = ' + DEFAULT_PAGE_SECONDS + '. De pagina kan ' +
+                  'ook zelf eerder stoppen met parent.zsDone().',
+              ),
+            );
+          }
+          if (key === 'hint' ? part.type !== 'puzzle' : part.type === 'page') {
+            animationField(box, part, key, 'animatie (binnenkomst)', 'Hoe de hint in beeld komt.');
+          }
           formEl.appendChild(box);
         }
 
@@ -1349,6 +1587,14 @@
                 '3x3 puzzel van deze foto. Stukjes komen in willekeurige volgorde uit de balk ' +
                 'onderin en klikken alleen op hun eigen plek vast. Doorscannen kan altijd.',
               video: 'Speelt zonder geluid, in een lus, tot de juiste scan.',
+              narrator:
+                'Figuurtje met een tekstballon (zoals de IDFA-speurtocht). Bij een verkeerde scan ' +
+                'wordt de ballon oranje, zie "Verkeerde scan".',
+              page:
+                'Eigen .html-bestand, beeldvullend, tot de juiste scan. Zet CSS en JS in de pagina ' +
+                'zelf (<style>, <script>): losse .css/.js-bestanden laden niet op de scanner. ' +
+                'Afbeeldingen naast de pagina in assets/pages/ werken wel. Opnieuw uploaden met ' +
+                'dezelfde naam vervangt de pagina.',
             },
             'toon',
           );
@@ -1362,9 +1608,13 @@
                 'Eerst de luisterinstructie, dan het audiotour-scherm. Klaar = volgende stop. ' +
                 'Scans doen niets tot hij klaar is (reset wel).',
               video: 'Speelt met geluid, één keer. Klaar = volgende stop.',
+              page:
+                'Eigen .html-bestand, beeldvullend (CSS/JS in de pagina zelf). Na de duur de ' +
+                'volgende stop.',
             },
             'speel',
           );
+          renderHelpPart(stop);
 
           var del = document.createElement('button');
           del.id = 'delete-scene';
@@ -1383,6 +1633,7 @@
           if (activeIndex === INTRO) return renderIntroForm();
           if (activeIndex === AUDIOTOUR) return renderAudiotourForm();
           if (activeIndex === END) return renderEndForm();
+          if (activeIndex === WRONG) return renderWrongForm();
           var stop = manifest.stops[activeIndex];
           if (!stop) {
             formEl.innerHTML = '<div id="empty-state">niets geselecteerd</div>';

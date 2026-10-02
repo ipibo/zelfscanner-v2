@@ -11,6 +11,9 @@
  *   veert het terug. Slepen mag overal op de slider beginnen, het blok volgt
  *   de vinger vanaf waar hij is.
  * - Terug naar dit scherm gaat alleen via de reset-barcode (zie runtime.js).
+ * - `fullImage: true`: geen slider, de afbeelding vult het hele scherm (als
+ *   de tekst al in het beeld staat). Starten kan dan alleen met de
+ *   start-barcode (manifest.splash.startScan, zie runtime.js).
  *
  * Constraints als puzzle.js: Chromium 46, dus ES5, geen libraries, losse
  * touch/mouse-events in plaats van HTML5 drag-and-drop. Maten in vw, want de
@@ -32,6 +35,8 @@ window.ZSSplash = (function () {
     '#zs-splash{position:absolute;top:0;left:0;right:0;bottom:0;z-index:30;display:none;background:#000;',
     'touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;}',
     '#zs-splash.zs-on{display:block;}',
+    '#zs-splash.zs-full #zs-splash-bg{height:100%;}',
+    '#zs-splash.zs-full #zs-slider{display:none;}',
     '#zs-splash-bg{position:absolute;top:0;left:0;width:100%;height:calc(100% - 21vw);object-fit:cover;display:none;}',
     '#zs-slider{position:absolute;left:0;right:0;bottom:0;height:21vw;box-sizing:border-box;',
     'border:.7vw solid #000;overflow:hidden;background:' + DEFAULT_COLOR + ';}',
@@ -212,9 +217,11 @@ window.ZSSplash = (function () {
     sliderEl.style.background = config.sliderColor || DEFAULT_COLOR;
     textEl.textContent = config.sliderText || DEFAULT_TEXT;
 
-    root.className = 'zs-on';
+    root.className = config.fullImage ? 'zs-on zs-full' : 'zs-on';
     moveTo(0, false);
-    bind(true);
+    if (!config.fullImage) {
+      bind(true);
+    }
   }
 
   function hide() {

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<!--
+  Voorbeeld HTML-pagina voor de zelfscanner (hint of beloning, type "page").
+  Uploaden via de editor: stop → Hint/Beloning → HTML-pagina → Choose file.
+
+  Regels voor de scanner (MC18N0, Chromium 46 uit 2015):
+  - Alles IN dit bestand: <style> en <script>. Een losse .css of .js laadt
+    op de scanner niet. Afbeeldingen naast de pagina (assets/pages/) wel.
+  - JS in ES5: geen =>, const/let, `template strings` of trailing commas.
+  - CSS: geen var(--…) (pas Chrome 49), geen inset, geen gap bij flex.
+    Wel: @keyframes, transform, opacity, transition, flex, vw/vh.
+  - Maten in vw/vh: het scherm is 480x800, staand.
+  - Als beloning: parent.zsDone() = klaar, door naar de volgende stop.
+    Anders na de ingestelde duur.
+-->
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1aa3e8; }
+  body { font-family: Arial, sans-serif; color: #fff; }
+
+  .title {
+    position: absolute; left: 0; right: 0; top: 30vh; text-align: center;
+    font: 900 15vw/1 Arial, sans-serif; text-shadow: 1vw 1vw 0 #0b5d8a;
+    -webkit-animation: pop .8s cubic-bezier(.3, 1.6, .5, 1) both;
+    animation: pop .8s cubic-bezier(.3, 1.6, .5, 1) both;
+  }
+  .sub {
+    position: absolute; left: 8vw; right: 8vw; top: 52vh; text-align: center;
+    font: 700 6vw/1.2 Arial, sans-serif;
+    -webkit-animation: fadeUp .6s .7s ease-out both;
+    animation: fadeUp .6s .7s ease-out both;
+  }
+  .star {
+    position: absolute; top: -10vh; width: 6vw; height: 6vw; background: #ffff5c;
+    -webkit-animation: fall 3s linear infinite; animation: fall 3s linear infinite;
+  }
+
+  @-webkit-keyframes pop { from { opacity: 0; -webkit-transform: scale(.2) rotate(-12deg); } to { opacity: 1; -webkit-transform: scale(1) rotate(-4deg); } }
+  @keyframes pop { from { opacity: 0; transform: scale(.2) rotate(-12deg); } to { opacity: 1; transform: scale(1) rotate(-4deg); } }
+  @-webkit-keyframes fadeUp { from { opacity: 0; -webkit-transform: translateY(5vh); } to { opacity: 1; -webkit-transform: translateY(0); } }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(5vh); } to { opacity: 1; transform: translateY(0); } }
+  @-webkit-keyframes fall { to { -webkit-transform: translateY(120vh) rotate(540deg); } }
+  @keyframes fall { to { transform: translateY(120vh) rotate(540deg); } }
+</style>
+</head>
+<body>
+  <div class="title">Goed<br>gevonden!</div>
+  <div class="sub">Op naar het volgende product…</div>
+
+  <script>
+    // Vallende confetti, ES5.
+    (function () {
+      var colors = ['#ffff5c', '#ff6b6b', '#ffffff', '#7cfc00'];
+      for (var i = 0; i < 24; i++) {
+        var s = document.createElement('div');
+        s.className = 'star';
+        s.style.left = Math.round(Math.random() * 95) + 'vw';
+        s.style.background = colors[i % colors.length];
+        var delay = (Math.random() * 3).toFixed(2) + 's';
+        var dur = (2 + Math.random() * 2).toFixed(2) + 's';
+        s.style.webkitAnimationDelay = delay;
+        s.style.animationDelay = delay;
+        s.style.webkitAnimationDuration = dur;
+        s.style.animationDuration = dur;
+        document.body.appendChild(s);
+      }
+      // Als beloning: na 5 s zelf klaar melden. (Als hint doet dit niets.)
+      setTimeout(function () {
+        if (window.parent && window.parent.zsDone) {
+          window.parent.zsDone();
+        }
+      }, 5000);
+    })();
+  </script>
+</body>
+</html>

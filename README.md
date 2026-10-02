@@ -77,6 +77,28 @@ draait. Bash + adb, geen server/MDM/StageNow.
 ./zsdeploy status          # welke versie draait waar — vlagt afwijkingen
 ```
 
+### Devices herkennen op serienummer
+
+`devices.txt` heeft per regel `naam ip [story] [sn=serienummer]`:
+
+```
+mc1 192.168.1.10 speurtocht sn=17321523020091
+ps1 192.168.1.6 sn=22096521400402
+```
+
+- zsdeploy herkent een device eerst aan zijn serienummer (`getprop
+  ro.serialno`), pas daarna aan zijn IP. IP's verschuiven via DHCP, het
+  serienummer niet, dus de story blijft bij het juiste device.
+- Krijgt een bekend device een nieuw IP, dan zet `push`, `status` en
+  `devices` dat zelf in `devices.txt`, zodat `connect` blijft werken.
+- `./zsdeploy adopt` geeft live devices zonder naam een naam en
+  serienummer. Oude regels zonder serienummer waarvan het IP niet meer
+  bestaat, worden eerst hergebruikt (mc voor MC18N0, ps voor PS20J). Welke
+  scanner welke oude naam krijgt is dan willekeurig, maar daarna vast.
+- `pair` schrijft het serienummer meteen mee.
+- Hangt een device aan USB én wifi, dan pusht zsdeploy er één keer naartoe,
+  via wifi. Twee pushes tegelijk naar één device maken het pack kapot.
+
 Zie `./zsdeploy -h` voor alle subcommando's en opties (`--model`, `--parallel`,
 `--dry-run`, `--restart`).
 
@@ -142,8 +164,11 @@ Scans:
 }
 ```
 
-- `hint.type` is `image`, `puzzle` of `video`.
-- `reward.type` is `audio` (audiotour) of `video`.
+- `hint.type` is `image`, `puzzle`, `video`, `narrator` (verteller) of `page`
+  (HTML-pagina). `hint.animation` (optioneel): `fade`, `slide`, `drop`,
+  `zoom`, `bounce` of `none`.
+- `reward.type` is `audio` (audiotour), `video` of `page`.
+- `stop.help` (optioneel): hulp-knop na een verkeerde scan, zie hieronder.
 - Een stop zonder hint-bestand toont zwart. Een stop zonder beloning gaat na
   de scan meteen door naar de volgende stop.
 - Het oude formaat met losse `scenes` wordt geweigerd. De editor neemt
@@ -314,6 +339,90 @@ Maten staan als vw in de CSS bovenin het bestand, afgeleid van het storyboard
   ze als beloning geluid nodig hebben.
 - **Desktop-preview:** Chrome blokkeert daar soms autoplay met geluid. De
   preview speelt de video dan stil af.
+
+## Verteller (`pack/narrator.js`)
+
+Hint-type uit de IDFA-speurtocht (2025): een figuurtje met een tekstballon.
+
+```json
+"hint": {
+  "type": "narrator",
+  "text": "The product we're looking for is a 15g herb…",
+  "src": "assets/images/speurtocht/figuurtjes-02.png",
+  "background": "assets/images/speurtocht/background-01.png",
+  "animation": "slide"
+}
+```
+
+- `text` is verplicht: het raadsel in de ballon. Enter = nieuwe regel.
+- `src` = het figuurtje, een beeldvullende PNG met transparantie (480x800).
+  Komt binnen met `animation` (leeg = `slide`). Leeg = alleen de ballon.
+- `background` vult het scherm erachter. Leeg = lichtblauw.
+- De ballon popt open als het figuurtje er bijna is.
+- **Verkeerde scan:** de ballon wordt oranje en schudt, met de melding en
+  het raadsel eronder.
+
+## Verkeerde scan en hulp-knop (`pack/help.js`)
+
+```json
+"wrongScan": {"text": "No, that's not the product…", "buttonText": "I need a hint"},
+"stops": [{ "help": {"image": "assets/images/…", "text": "We're looking for this detergent."} }]
+```
+
+- `wrongScan.text`: de melding bij een verkeerde scan. Leeg = "VERKEERD
+  PRODUCT". Bij een verteller in de ballon, anders 1,5 s een rode laag.
+- `help` per stop (optioneel): na de eerste verkeerde scan verschijnt onderin
+  de knop (`buttonText`, leeg = "I need a hint"). Die opent een kaart met de
+  foto (licht vervaagd) en de tekst. × sluit hem, de knop blijft.
+- Bij de volgende stop is de knop weer weg. Scans werken door terwijl de kaart
+  open is.
+
+## HTML-pagina als hint of beloning (`pack/page.js`)
+
+```json
+"hint":   {"type": "page", "src": "assets/pages/raadsel.html", "animation": "zoom"},
+"reward": {"type": "page", "src": "assets/pages/goed-gevonden.html", "seconds": 10}
+```
+
+- Een eigen `.html`-bestand, beeldvullend. Upload via de editor (kies
+  HTML-pagina bij het type), komt in `pack/assets/pages/`. Opnieuw uploaden met
+  dezelfde naam **vervangt** de pagina.
+- Als hint: tot de juiste scan. Als beloning: `seconds` lang (leeg = 10),
+  of tot de pagina zelf `parent.zsDone()` aanroept.
+- **Alles in de pagina zelf.** De runtime haalt de pagina op met XHR en zet
+  hem via `srcdoc` in een iframe, want `<script src>` van file:// laadt op de
+  MC18N0 niet. Dus inline `<style>` en `<script>`. Afbeeldingen en video naast
+  de pagina (`assets/pages/`) werken wel (er staat een `<base>` naar die map).
+- Chromium 46: JS in ES5, geen CSS-variabelen (`var(--x)`), geen `inset`.
+  `@keyframes`, `transform`, `transition`, flex en vw/vh werken wel.
+- Voorbeeld met CSS-animaties en confetti: `examples/pages/goed-gevonden.html`.
+
+## Animaties (`pack/fx.js`)
+
+`hint.animation` bepaalt hoe een afbeelding, video, HTML-pagina of het
+figuurtje van de verteller in beeld komt: `fade` (invaden), `slide` (van onder
+omhoog), `drop` (van boven), `zoom` (pop), `bounce` (omhoog stuiteren).
+Leeg/`none` = meteen. Alleen `transform` en `opacity`, dus soepel op de
+MC18N0. Nieuwe animaties: bovenin `pack/fx.js` en in `ANIMATIONS` in
+`tools/manifest-schema.js` en `tools/editor.html`.
+
+## Start-barcode en beeldvullend splash/eindscherm
+
+- `splash.startScan` (optioneel): scannen op het splash-scherm start de story,
+  net als swipen. Staat als START-kaart in Barcodes (PDF).
+- `splash.fullImage: true`: geen slider, de afbeelding vult het scherm (als
+  "Scan the test code to start!" al in het beeld staat). Vereist `startScan`.
+- `end.fullImage: true`: geen balk onder het eindscherm (tekst zit al in het
+  beeld).
+
+## Story "speurtocht"
+
+`stories/speurtocht.json` is de IDFA-speurtocht uit
+`2024/zelfscanner-keynote/speurtocht`, overgezet naar dit systeem: zes
+verteller-stops met hulp-knop en een video als beloning, start-barcode
+`123456789`, eindscherm beeldvullend. Media staat in
+`pack/assets/images/speurtocht/` en `pack/assets/speurtocht/`. Op een scanner
+zetten: kies "speurtocht" in de dropdown **story per device** en push.
 
 ## Eindscherm (`pack/end.js`)
 
@@ -511,11 +620,12 @@ blijft gedeeld in `pack/assets/` en gaat naar elk device.
   krijgt. Dat wordt meteen in `devices.txt` gezet, als derde kolom:
 
   ```
-  mc6 192.168.1.31 kids
-  mc7 192.168.1.5 kids
+  mc6 192.168.1.31 kids sn=19040523020287
+  mc7 192.168.1.5 kids sn=18157523020523
   ```
 
-  Geen derde kolom = standaard. `zsdeploy pair` laat die kolom staan.
+  Geen story = standaard. `zsdeploy pair` en de editor laten story en
+  serienummer staan.
 - Bij een push zet `zsdeploy` voor zo'n device `stories/<naam>.json` als
   `manifest.json` in de staging, en vergelijkt daartegen (byte-diff). Bestaat
   de story niet, dan stopt de push vóórdat er een device wordt aangeraakt.

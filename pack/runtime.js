@@ -10,13 +10,17 @@
  * luisterinstructie ligt dan meteen over de eerste hint.
  *
  * Een stop (manifest.stops[i]) koppelt een product-barcode aan een hint
- * (afbeelding, puzzel of video) en een beloning (audiotour of video). Na een
+ * (afbeelding, puzzel, video, HTML-pagina of verteller) en een beloning
+ * (audiotour, video of HTML-pagina). Een hint kan met een animatie binnenkomen
+ * (hint.animation, zie fx.js). Na een
  * audiotour-beloning komt eerst weer de luisterinstructie. De beloning hangt
  * aan de stop en dus aan de barcode, niet aan de positie in de lijst: de
  * volgorde kan later per bezoeker geschud worden (zie `order`).
  *
  * Scans: tijdens een hint gaat alleen de barcode van die stop door, de rest
- * geeft "verkeerd product". Tijdens intro, beloning en op splash/eindscherm doen
+ * geeft "verkeerd product" (manifest.wrongScan.text; bij een verteller in de
+ * tekstballon). Heeft de stop `help`, dan verschijnt daarna de hulp-knop
+ * (help.js). Tijdens intro, beloning en op splash/eindscherm doen
  * scans niets. De reset-barcode en terugzetten in de cradle werken altijd:
  * terug naar het splash-scherm, voortgang weg.
  *
@@ -24,6 +28,9 @@
  * de cradle (App.tsx doet de unlock). Zit hij er na UNDOCK_WAIT_MS nog in,
  * dan terug naar splash, anders staat de volgende bezoeker voor een dichte
  * cradle zonder swipe.
+ *
+ * Starten: swipen op het splash-scherm, of de start-barcode
+ * (manifest.splash.startScan) scannen.
  *
  * Geen framework, geen build-stap: dit bestand draait ongewijzigd vanaf het
  * filesystem in de WebView, dus wat je hier aanpast zie je na een adb push
@@ -52,6 +59,7 @@
   var UNDOCK_WAIT_MS = 15000;
   var DEFAULT_INSTRUCTION_TEXT = 'Keep the scanner next to your ear';
   var DEFAULT_INSTRUCTION_SECONDS = 5;
+  var DEFAULT_WRONG_TEXT = 'VERKEERD PRODUCT';
 
   function log(msg) {
     debugEl.textContent = msg;
@@ -106,11 +114,24 @@
     pos = 0;
   }
 
+  function wrongScanConfig() {
+    return manifest.wrongScan || {};
+  }
+
+  // Verteller: melding in de tekstballon. Anders: rode laag, 1,5 s. Daarna
+  // de hulp-knop, als de stop help heeft.
   function showError() {
-    errorEl.classList.add('show');
-    errorEl.textContent = 'VERKEERD PRODUCT';
-    clearTimeout(errorTimer);
-    errorTimer = setTimeout(hideError, 1500);
+    var text = wrongScanConfig().text || DEFAULT_WRONG_TEXT;
+    if (window.ZSNarrator.isMounted()) {
+      window.ZSNarrator.error(text);
+    } else {
+      errorEl.classList.add('show');
+      errorEl.textContent = text;
+      clearTimeout(errorTimer);
+      errorTimer = setTimeout(hideError, 1500);
+    }
+    var stop = currentStop();
+    window.ZSHelp.offer(stop && stop.help, wrongScanConfig().buttonText);
   }
 
   function hideError() {
@@ -130,10 +151,15 @@
     video.style.display = 'none';
     photo.style.display = 'none';
     photo.removeAttribute('src');
+    window.ZSFx.clear(video);
+    window.ZSFx.clear(photo);
     if (window.ZSPuzzle) {
       window.ZSPuzzle.unmount();
     }
     window.ZSAudiotour.unmount();
+    window.ZSNarrator.unmount();
+    window.ZSPage.unmount();
+    window.ZSHelp.hide();
   }
 
   function clearStage() {
@@ -200,8 +226,13 @@
     phase = 'hint';
 
     var hint = stop.hint || {};
-    if (!hint.src) {
+    if (hint.type === 'narrator') {
+      // figuurtje (src) mag leeg zijn, de tekst is de hint
+      window.ZSNarrator.mount(hint, log);
+    } else if (!hint.src) {
       log('stop ' + stop.id + ' heeft geen hint');
+    } else if (hint.type === 'page') {
+      window.ZSPage.mount(hint.src, {animation: hint.animation}, log);
     } else if (hint.type === 'puzzle') {
       if (window.ZSPuzzle) {
         // De puzzel is een hint, geen horde: de scan werkt altijd, ook als
@@ -218,10 +249,12 @@
       }
     } else if (hint.type === 'video') {
       playVideo(hint.src, false);
+      window.ZSFx.play(video, hint.animation);
     } else {
       photo.src = hint.src;
       // 'block', niet '': index.html zet img#photo standaard op display:none.
       photo.style.display = 'block';
+      window.ZSFx.play(photo, hint.animation);
     }
     logWaiting();
   }
@@ -254,6 +287,17 @@
       stopMedia();
       playVideo(reward.src, true);
       log('stop ' + stop.id + ' — beloning: video');
+      return;
+    }
+    if (reward.type === 'page') {
+      hideOverlay();
+      stopMedia();
+      window.ZSPage.mount(
+        reward.src,
+        {reward: true, seconds: reward.seconds, animation: reward.animation, onDone: nextStop},
+        log
+      );
+      log('stop ' + stop.id + ' — beloning: pagina');
       return;
     }
 
@@ -394,6 +438,12 @@
       reset('scan');
       return;
     }
+    // Start-barcode: start de story vanaf het splash-scherm, net als swipen.
+    var splash = manifest.splash || {};
+    if (phase === 'splash' && splash.startScan && code === splash.startScan) {
+      startStory();
+      return;
+    }
     if (phase !== 'hint') {
       return;
     }
@@ -431,8 +481,9 @@
   // Alleen voor de story editor (tools/editor.html), nooit door de native
   // app: zet de preview op één onderdeel, met het nog niet opgeslagen
   // manifest uit de editor (m; weglaten = huidige houden).
-  //   target.kind: splash | instruction | intro | audiotour | hint | reward | end
-  //   target.index: stop-index bij hint en reward
+  //   target.kind: splash | instruction | intro | audiotour | hint | reward |
+  //                help | wrong | end
+  //   target.index: stop-index bij hint, reward en help (wrong: eerste stop)
   //   target null: alleen het manifest bijwerken, beeld blijft staan
   window.__editorPreview = function (m, target) {
     if (m) {
@@ -479,12 +530,26 @@
       showEnd();
       return;
     }
-    if ((kind === 'hint' || kind === 'reward') && manifest.stops[target.index]) {
+    if (kind === 'wrong' && manifest.stops.length) {
+      resetOrder();
+      showHint(false);
+      // de ballon van de verteller komt iets later binnen, dan pas de fout
+      setTimeout(function () {
+        if (phase === 'hint') {
+          showError();
+        }
+      }, 1200);
+      return;
+    }
+    if ((kind === 'hint' || kind === 'reward' || kind === 'help') && manifest.stops[target.index]) {
       resetOrder();
       pos = target.index;
       showHint(false);
       if (kind === 'reward') {
         startReward(true);
+      }
+      if (kind === 'help' && window.ZSHelp.offer(currentStop().help, wrongScanConfig().buttonText)) {
+        window.ZSHelp.open();
       }
       return;
     }

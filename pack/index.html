@@ -7,11 +7,13 @@
   video, img#photo { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
   img#photo { display: none; }
   /* top/left/right/bottom i.p.v. inset: inset bestaat pas sinds Chromium 87.
-     z-index boven puzzel (2), audiotour (20), eindscherm (30) en overlay (40),
+     z-index boven puzzel (2), verteller (5), html-pagina (6), audiotour (20),
+     eindscherm (30), hulp-knop (35), overlay (40) en hulp-kaart (45),
      anders zie je de melding daar niet. */
   #error {
     position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 50; display: none; align-items: center; justify-content: center;
     background: rgba(200, 0, 0, 0.85); color: #fff; font: bold 8vw sans-serif; text-align: center;
+    padding: 0 8vw; box-sizing: border-box; white-space: pre-line;
   }
   #error.show { display: flex; }
   #debug {
@@ -53,8 +55,12 @@
 
       try {
         // modules eerst, runtime.js als laatste: die gebruikt ze allemaal
-        // (ZSPuzzle, ZSSplash, ZSOverlay, ZSAudiotour, ZSEnd).
-        var files = ['puzzle.js', 'splash.js', 'overlay.js', 'audiotour.js', 'end.js', 'runtime.js'];
+        // (ZSFx, ZSPuzzle, ZSSplash, ZSOverlay, ZSAudiotour, ZSEnd,
+        // ZSNarrator, ZSPage, ZSHelp). fx.js vóór narrator.js en page.js.
+        var files = [
+          'fx.js', 'puzzle.js', 'splash.js', 'overlay.js', 'audiotour.js', 'end.js',
+          'narrator.js', 'page.js', 'help.js', 'runtime.js'
+        ];
         for (var i = 0; i < files.length && loadLocal(files[i]); i++) {}
       } catch (e) {
         debugEl.textContent = 'pack laden MISLUKT: ' + e.message;
