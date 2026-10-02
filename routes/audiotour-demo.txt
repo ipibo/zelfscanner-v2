@@ -1,31 +1,22 @@
 # Audiotour demo route -- placeholder narration (macOS `say`, Xander/nl_NL),
 # real barcodes to be swapped in once the actual route is walked in-store.
-version: 0.1.0
+# Bouwen:  npm run pack:build -- routes/audiotour-demo.txt
+version: 0.3.0
+# terug naar het splash-scherm, vanuit elke stop
+reset: 8712345679999
+endText: Please gather at the\nself-checkout
 
-scene: intro
-audio: assets/audio/intro.mp3
-text: Welkom bij de zelfscanner-tour. Scan het eerste product om te beginnen.
+stop: zuivel
 scan: 8712345670012
-next: dairy
+hint: image assets/images/puzzel-test.jpg
+reward: audio assets/audio/dairy.mp3
 
-scene: dairy
-audio: assets/audio/dairy.mp3
-text: Loop naar het zuivelschap en scan de melk.
+stop: brood
 scan: 8712345670029
-next: bread
+hint: puzzle assets/images/puzzel-test.jpg
+reward: audio assets/audio/bread.mp3
 
-scene: bread
-audio: assets/audio/bread.mp3
-text: Loop naar het broodschap en scan een brood.
+stop: kassa
 scan: 8712345670036
-next: checkout
-
-scene: checkout
-audio: assets/audio/checkout.mp3
-text: Loop naar de kassa en scan je laatste product.
-scan: 8712345670043
-next: end
-
-scene: end
-audio: assets/audio/end.mp3
-text: Bedankt voor het meedoen aan de tour!
+hint: video assets/5s30fps.mp4
+reward: audio assets/audio/checkout.mp3

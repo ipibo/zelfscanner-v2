@@ -1,17 +1,23 @@
-# Demo-route voor de puzzel-minigame (eerste module uit het storyboard).
+# Demo-route voor de puzzel-minigame en een video als beloning.
 # Bouwen:  npm run pack:build -- routes/puzzel-demo.txt
 # Let op: dat overschrijft pack/manifest.json, dus bewaar je huidige route
-# eerst of maak de puzzel-scene gewoon in de story editor.
+# eerst of maak de stops gewoon in de story editor.
 
-version: 0.2.0
+version: 0.3.0
+reset: 8712345679999
+splash: assets/images/puzzel-test.jpg
+splashColor: #ffff5c
+splashText: Swipe to start
+instruction: Keep the scanner next to your ear
+instructionSeconds: 5
+endText: Please gather at the\nself-checkout
 
-scene: puzzel
-puzzle: assets/images/puzzel-test.jpg
-audio: assets/audio/intro.mp3
-text: Leg de puzzel, of scan het volgende product
+stop: puzzel
 scan: 8712345670012
-next: eind
+hint: puzzle assets/images/puzzel-test.jpg
+reward: audio assets/audio/intro.mp3
 
-scene: eind
-image: assets/images/puzzel-test.jpg
-text: Einde demo
+stop: video
+scan: 8712345670029
+hint: image assets/images/puzzel-test.jpg
+reward: video assets/20260819_104000.mp4

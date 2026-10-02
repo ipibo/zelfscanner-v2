@@ -11,12 +11,12 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const {execFile} = require('child_process');
+const {EXT, validateManifest} = require('./manifest-schema');
 
 const ROOT = path.resolve(__dirname, '..');
 const PACK_DIR = path.join(ROOT, 'pack');
 const MANIFEST_PATH = path.join(PACK_DIR, 'manifest.json');
 const PORT = Number(process.argv[2]) || 8934;
-const BARCODE_RE = /^\d{8,14}$/;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -30,9 +30,9 @@ const MIME = {
   '.webp': 'image/webp',
 };
 
-const VIDEO_EXT = new Set(['.mp4', '.mov', '.webm']);
-const AUDIO_EXT = new Set(['.mp3', '.wav', '.m4a']);
-const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+const VIDEO_EXT = EXT.video;
+const AUDIO_EXT = EXT.audio;
+const IMAGE_EXT = EXT.image;
 
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -72,54 +72,6 @@ function readRawBody(req, maxBytes) {
 function sendJson(res, obj, code = 200) {
   res.writeHead(code, {'Content-Type': 'application/json; charset=utf-8'});
   res.end(JSON.stringify(obj));
-}
-
-// Same shape validate() from tools/build-manifest.js enforces on the
-// route -> manifest build step -- kept in sync by hand since the editor
-// writes manifest.json directly, bypassing that build step.
-function validateManifest(manifest) {
-  const errors = [];
-  if (!manifest || typeof manifest !== 'object') return ['manifest is geen object'];
-  if (!Array.isArray(manifest.scenes) || manifest.scenes.length === 0) {
-    return ['manifest.scenes ontbreekt of is leeg'];
-  }
-
-  const ids = new Set();
-  manifest.scenes.forEach((scene, i) => {
-    if (!scene.id) {
-      errors.push(`scene #${i + 1}: mist "id"`);
-      return;
-    }
-    if (ids.has(scene.id)) {
-      errors.push(`dubbele scene id: "${scene.id}"`);
-    }
-    ids.add(scene.id);
-    if (scene.expectScan && !BARCODE_RE.test(scene.expectScan)) {
-      errors.push(`scene "${scene.id}": scan "${scene.expectScan}" ziet er niet uit als een barcode (8-14 cijfers)`);
-    }
-    // Een scene is óf een video, óf een foto met audio-narratie, óf een
-    // puzzel met audio-narratie -- nooit twee beelddragers tegelijk.
-    const visuals = ['video', 'image', 'puzzle'].filter(f => scene[f]);
-    if (visuals.length > 1) {
-      errors.push(`scene "${scene.id}": ${visuals.join(' en ')} kunnen niet allebei tegelijk (kies één)`);
-    }
-    if (scene.video && scene.audio) {
-      errors.push(`scene "${scene.id}": video en audio kunnen niet allebei tegelijk (video staat op zichzelf, narratie hoort bij image of puzzle)`);
-    }
-    ['audio', 'video', 'image', 'puzzle'].forEach(field => {
-      if (scene[field] && !fs.existsSync(path.join(PACK_DIR, scene[field]))) {
-        errors.push(`scene "${scene.id}": ${field} bestand niet gevonden: ${scene[field]}`);
-      }
-    });
-  });
-
-  manifest.scenes.forEach(scene => {
-    if (scene.next && !ids.has(scene.next)) {
-      errors.push(`scene "${scene.id}": next "${scene.next}" verwijst naar een scene die niet bestaat`);
-    }
-  });
-
-  return errors;
 }
 
 function listAssets() {
@@ -236,7 +188,10 @@ function normalizeVideo(inputPath, outputPath) {
         '-pix_fmt', 'yuv420p',
         '-crf', '20',
         '-preset', 'medium',
-        '-an', // video scenes always render muted (see pack/index.html), narration is a separate audio field
+        // Geluid blijft erin: een video als beloning speelt met geluid, als
+        // hint stil (pack/runtime.js). AAC-LC speelt ook op de MC18N0.
+        '-c:a', 'aac',
+        '-b:a', '128k',
         '-movflags', '+faststart',
         outputPath,
       ],
@@ -402,7 +357,7 @@ http
       } catch (e) {
         return sendJson(res, {ok: false, errors: ['ongeldige JSON: ' + e.message]}, 400);
       }
-      const errors = validateManifest(manifest);
+      const errors = validateManifest(manifest, PACK_DIR);
       if (errors.length > 0) {
         return sendJson(res, {ok: false, errors}, 400);
       }

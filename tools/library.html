@@ -168,13 +168,19 @@
         }
 
         function buildUsage(manifest) {
-          var usage = {}; // path -> [sceneId, ...]
-          (manifest.scenes || []).forEach(function (scene) {
-            ['video', 'image', 'audio'].forEach(function (field) {
-              if (!scene[field]) return;
-              usage[scene[field]] = usage[scene[field]] || [];
-              usage[scene[field]].push(scene.id);
-            });
+          var usage = {}; // path -> [naam, ...]
+          function use(path, name) {
+            if (!path) return;
+            usage[path] = usage[path] || [];
+            usage[path].push(name);
+          }
+          use(manifest.splash && manifest.splash.image, 'splash');
+          use(manifest.intro && manifest.intro.src, 'intro-audio');
+          use(manifest.audiotour && manifest.audiotour.image, 'audiotour-scherm');
+          use(manifest.end && manifest.end.image, 'eindscherm');
+          (manifest.stops || []).forEach(function (stop) {
+            use(stop.hint && stop.hint.src, stop.id + ' (hint)');
+            use(stop.reward && stop.reward.src, stop.id + ' (beloning)');
           });
           return usage;
         }
@@ -247,9 +253,9 @@
             del.textContent = 'Verwijderen';
             del.onclick = function () {
               var msg = usedBy.length
-                ? 'Let op: "' + file.path + '" wordt gebruikt door scene(s) ' +
+                ? 'Let op: "' + file.path + '" wordt gebruikt door ' +
                   usedBy.join(', ') +
-                  '. Verwijderen breekt die scene(s) totdat je er in de editor ' +
+                  '. Verwijderen breekt dat totdat je er in de editor ' +
                   'een ander bestand aan koppelt.\n\nToch verwijderen?'
                 : 'Bestand "' + file.path + '" verwijderen?';
               if (!confirm(msg)) return;

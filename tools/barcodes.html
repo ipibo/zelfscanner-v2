@@ -83,6 +83,14 @@
         font-size: 13px;
         letter-spacing: 0.05em;
       }
+      .card.reset {
+        outline: 4px solid #d22;
+        outline-offset: -4px;
+      }
+      .card.reset .scene-id {
+        color: #d22;
+        letter-spacing: 0.08em;
+      }
       #empty {
         padding: 40px 20px;
         color: #999;
@@ -226,30 +234,50 @@
             return r.json();
           })
           .then(function (manifest) {
-            var scenes = (manifest.scenes || []).filter(function (s) {
-              return !!s.expectScan;
-            });
-            if (scenes.length === 0) {
+            var NAMES = {image: 'afbeelding', puzzle: 'puzzel', video: 'video', audio: 'audiotour'};
+            var cards = (manifest.stops || [])
+              .filter(function (s) {
+                return !!s.scan;
+              })
+              .map(function (s, i) {
+                var hint = s.hint && NAMES[s.hint.type];
+                var reward = s.reward && NAMES[s.reward.type];
+                return {
+                  id: i + 1 + '. ' + s.id,
+                  code: s.scan,
+                  meta: (hint || '?') + ' → ' + (reward || '?'),
+                };
+              });
+            // reset-code vooraan, als eigen kaart
+            if (manifest.resetScan) {
+              cards.unshift({
+                id: 'RESET',
+                code: manifest.resetScan,
+                meta: 'terug naar splash, voortgang weg',
+                reset: true,
+              });
+            }
+            if (cards.length === 0) {
               gridEl.innerHTML =
-                '<div id="empty">geen scenes met een verwachte scan in pack/manifest.json</div>';
+                '<div id="empty">geen stops met een barcode in pack/manifest.json</div>';
               return;
             }
-            scenes.forEach(function (scene) {
+            cards.forEach(function (item) {
               var card = document.createElement('div');
-              card.className = 'card';
+              card.className = 'card' + (item.reset ? ' reset' : '');
 
               var id = document.createElement('div');
               id.className = 'scene-id';
-              id.textContent = scene.id;
+              id.textContent = item.id;
               card.appendChild(id);
 
               var meta = document.createElement('div');
               meta.className = 'scene-meta';
-              meta.textContent = scene.next ? '→ ' + scene.next : '';
+              meta.textContent = item.meta;
               card.appendChild(meta);
 
               try {
-                var svg = barcodeSVG(scene.expectScan);
+                var svg = barcodeSVG(item.code);
                 var svgWrap = document.createElement('div');
                 svgWrap.innerHTML = svg;
                 card.appendChild(svgWrap.firstChild);
@@ -262,7 +290,7 @@
 
               var code = document.createElement('div');
               code.className = 'code';
-              code.textContent = scene.expectScan;
+              code.textContent = item.code;
               card.appendChild(code);
 
               gridEl.appendChild(card);

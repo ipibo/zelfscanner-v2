@@ -1,19 +1,73 @@
 {
-  "version": "1",
-  "scenes": [
+  "version": "0.3.0",
+  "resetScan": "8712345679999",
+  "splash": {
+    "sliderColor": "#ffff5c",
+    "sliderText": "Swipe to start",
+    "image": "assets/images/Screenshot_2026-09-17_at_15.37.48.png"
+  },
+  "instruction": {
+    "text": "Keep the scanner next to your ear",
+    "seconds": 5
+  },
+  "intro": {
+    "src": "assets/audio/1._start-esv2-50p-bg-10p-music-m.mp3"
+  },
+  "audiotour": {
+    "image": "assets/images/oor_groen_ps480.jpg"
+  },
+  "stops": [
     {
-      "id": "Begin",
-      "expectScan": "4717751786716",
-      "video": "assets/20260819_104000.mp4"
+      "id": "Pizza mozzarella ",
+      "scan": "8718906863866",
+      "hint": {
+        "type": "puzzle",
+        "src": "assets/images/AHI_5331453431496c705178696c6374516772354a643251.jpeg.webp"
+      },
+      "reward": {
+        "type": "audio",
+        "src": "assets/audio/2._pizza-esv2-35p-bg-m-music-m.mp3"
+      }
     },
     {
-      "id": "scene5",
-      "expectScan": "7067313243090",
-      "puzzle": "assets/images/Photo_on_17-09-2026_at_15.08.jpg"
+      "id": "Stofzuigerzakken huismerk blauw",
+      "scan": "8710400431718",
+      "hint": {
+        "type": "puzzle",
+        "src": "assets/images/AHI_6c77535637384f595146716870344b5a706f68324b41.jpeg.webp"
+      },
+      "reward": {
+        "type": "audio",
+        "src": "assets/audio/3._stofzuigerzakken-esv2-40p-bg-m-music-m.mp3"
+      }
     },
     {
-      "id": "scene6",
-      "expectScan": "7913351912499"
+      "id": "1,5L Coca cola",
+      "scan": "5000112646627",
+      "hint": {
+        "type": "puzzle",
+        "src": "assets/images/AHI_4647566232797230547457306561764b4e4555433751.jpeg.webp"
+      },
+      "reward": {
+        "type": "audio",
+        "src": "assets/audio/4._cola-esv2-70p-bg-m-music-m.mp3"
+      }
+    },
+    {
+      "id": "Nutrasense 1melkpoeder",
+      "scan": "8713500012214",
+      "hint": {
+        "type": "puzzle",
+        "src": "assets/images/AHI_692d444e43305662523257766a4c313256364e4a7977.jpeg.webp"
+      },
+      "reward": {
+        "type": "audio",
+        "src": "assets/audio/5._melkpoeder-esv2-85p-bg-m-music-m.mp3"
+      }
     }
-  ]
+  ],
+  "end": {
+    "barColor": "#ffff5c",
+    "barText": "Please gather at the\nself-checkout"
+  }
 }
