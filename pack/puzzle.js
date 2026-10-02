@@ -7,6 +7,8 @@
  *   volgorde, SLOTS tegelijk. Zodra er een ligt schuift het volgende aan.
  * - Een stukje klikt alleen vast op zijn eigen plek. Elders veert het terug
  *   naar de balk, zonder foutmelding.
+ * - Geluid: goed gelegd = SOUND_PLACE, teruggeveerd naar de balk =
+ *   SOUND_BACK. Loslaten op zijn eigen plek in de balk blijft stil.
  * - De puzzel is een hint, geen horde. De bezoeker mag altijd doorscannen naar
  *   het volgende artikel; elk goed gelegd stukje maakt de hint duidelijker.
  *   Af = lijnen weg, beeld heel, blijft staan tot de volgende scan.
@@ -38,6 +40,10 @@ window.ZSPuzzle = (function () {
   var KNOB_STEPS = 18; // lijnstukjes per nop
   var PAD = 0.28; // ruimte rond een stukje in zijn eigen canvas: nop + schaduw
   var LINE = 0.014; // lijndikte op het bord, in celbreedtes
+  // Relatief aan de pack-pagina, net als de foto's in het manifest. Media staat
+  // niet in git: zsdeploy push zet pack/assets/ op de devices.
+  var SOUND_PLACE = 'assets/audio/puzzle-right-place.mp3';
+  var SOUND_BACK = 'assets/audio/puzzle-swoosh.mp3';
 
   // Punten van één nop op een rand van (0,0) naar (1,0): [langs, naar buiten].
   var KNOB_PTS = (function () {
@@ -67,6 +73,7 @@ window.ZSPuzzle = (function () {
   var onSolve = null;
   var onLog = null;
   var resizeTimer = null;
+  var sounds = null; // {place, back}: <audio>, één keer per mount voorgeladen
 
   // touch-action:none -- de pagina heeft geen viewport-meta en de WebView staat
   // zoom toe, dus zonder dit mag Chromium pan/pinch/dubbeltik-zoom starten
@@ -99,6 +106,36 @@ window.ZSPuzzle = (function () {
   function log(msg) {
     if (onLog) {
       onLog(msg);
+    }
+  }
+
+  function loadSound(src) {
+    var el = new Audio(src);
+    el.preload = 'auto';
+    el.onerror = function () {
+      log('puzzel-geluid laadt niet: ' + src);
+    };
+    el.load();
+    return el;
+  }
+
+  // Terug naar het begin en spelen, zodat snel achter elkaar leggen elke keer
+  // klinkt. currentTime zetten kan gooien zolang de metadata er nog niet is.
+  // play() geeft op deze WebView nog geen Promise terug, zie runtime.js.
+  function playSound(el) {
+    if (!el) {
+      return;
+    }
+    try {
+      el.currentTime = 0;
+    } catch (e) {
+      // nog niet geladen: speelt dan gewoon vanaf het begin
+    }
+    var result = el.play();
+    if (result && typeof result.catch === 'function') {
+      result.catch(function (e) {
+        log('puzzel-geluid — play mislukt: ' + e.message);
+      });
     }
   }
 
@@ -428,6 +465,7 @@ window.ZSPuzzle = (function () {
 
   function placePiece(piece) {
     filled[piece.index] = true;
+    playSound(sounds && sounds.place);
     if (piece.node.parentNode) {
       piece.node.parentNode.removeChild(piece.node);
     }
@@ -518,6 +556,9 @@ window.ZSPuzzle = (function () {
     if (ev.type !== 'touchcancel' && cellAt(p) === piece.index && !filled[piece.index]) {
       placePiece(piece);
     } else {
+      if (pieceAt(p) !== piece) {
+        playSound(sounds && sounds.back);
+      }
       returnToSlot(piece);
     }
   }
@@ -579,6 +620,9 @@ window.ZSPuzzle = (function () {
 
     img = image;
     solved = false;
+    if (!sounds) {
+      sounds = {place: loadSound(SOUND_PLACE), back: loadSound(SOUND_BACK)};
+    }
     randomEdges();
     boardEl = make('canvas');
     boardEl.id = 'zp-board';
@@ -634,6 +678,11 @@ window.ZSPuzzle = (function () {
       }
     }
     clearTimeout(resizeTimer);
+    if (sounds) {
+      sounds.place.pause();
+      sounds.back.pause();
+      sounds = null;
+    }
     drag = null;
     geom = null;
     img = null;
