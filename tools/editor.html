@@ -1768,16 +1768,62 @@
         }
         document.getElementById('refresh-devices').onclick = refreshDevices;
 
+        // Welke devices de push krijgen: vinkje per device (onthouden in deze
+        // browser). Push gaat alleen naar de aangevinkte.
+        var PUSH_KEY = 'zs-push-devices';
+        var pushSelected = {};
+        try {
+          JSON.parse(localStorage.getItem(PUSH_KEY) || '[]').forEach(function (n) {
+            pushSelected[n] = true;
+          });
+        } catch (e) {
+          /* geen opslag: begint leeg */
+        }
+        var pushing = false;
+
+        function selectedDevices() {
+          return devices
+            .map(function (d) {
+              return d.name;
+            })
+            .filter(function (n) {
+              return pushSelected[n];
+            });
+        }
+
+        function savePushSelection() {
+          try {
+            localStorage.setItem(PUSH_KEY, JSON.stringify(selectedDevices()));
+          } catch (e) {
+            /* niet erg */
+          }
+        }
+
+        function updateDeployButton() {
+          var btn = document.getElementById('deploy');
+          if (pushing) return;
+          var names = selectedDevices();
+          btn.disabled = names.length === 0;
+          btn.textContent = names.length
+            ? 'Push naar ' + (names.length === 1 ? names[0] : names.length + ' scanners')
+            : 'Kies scanners om te pushen';
+          btn.title = names.join(', ');
+        }
+
         document.getElementById('deploy').onclick = function () {
           var btn = this;
+          var names = selectedDevices();
+          if (!names.length) return;
+          pushing = true;
           btn.disabled = true;
-          btn.textContent = 'bezig…';
-          showDeployLog('push gestart…');
+          btn.textContent = 'bezig… (' + names.join(', ') + ')';
+          showDeployLog('push gestart naar ' + names.join(', ') + ' — dit kan een paar minuten duren…');
           fetch('/api/deploy', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
               restart: document.getElementById('restart-app').checked,
+              devices: names,
             }),
           })
             .then(function (r) {
@@ -1790,8 +1836,8 @@
               showDeployLog('push mislukt: ' + e.message);
             })
             .finally(function () {
-              btn.disabled = false;
-              btn.textContent = 'Push naar scanners';
+              pushing = false;
+              updateDeployButton();
             });
         };
 
@@ -1815,13 +1861,41 @@
 
         function renderDeviceStories() {
           deviceStoriesEl.innerHTML = '';
+          updateDeployButton();
           if (!devices.length) return;
           var title = document.createElement('span');
-          title.textContent = 'story per device:';
+          title.textContent = 'push naar / story:';
           deviceStoriesEl.appendChild(title);
+          [
+            ['alles', true],
+            ['geen', false],
+          ].forEach(function (b) {
+            var a = document.createElement('a');
+            a.href = '#';
+            a.textContent = b[0];
+            a.style.color = '#8cf';
+            a.onclick = function (e) {
+              e.preventDefault();
+              devices.forEach(function (d) {
+                pushSelected[d.name] = b[1];
+              });
+              savePushSelection();
+              renderDeviceStories();
+            };
+            deviceStoriesEl.appendChild(a);
+          });
           devices.forEach(function (d) {
             var label = document.createElement('label');
-            label.title = d.ip;
+            label.title = d.ip + (d.sn ? ' · sn ' + d.sn : '') + ' — vinkje = meenemen in de push';
+            var check = document.createElement('input');
+            check.type = 'checkbox';
+            check.checked = !!pushSelected[d.name];
+            check.onchange = function () {
+              pushSelected[d.name] = check.checked;
+              savePushSelection();
+              updateDeployButton();
+            };
+            label.appendChild(check);
             label.appendChild(document.createTextNode(d.name));
             var sel = document.createElement('select');
             stories.forEach(function (n) {

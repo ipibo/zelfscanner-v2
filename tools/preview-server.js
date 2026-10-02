@@ -458,7 +458,17 @@ http
       }
       const args = ['push', 'pack', '--parallel'];
       if (body.restart) args.push('--restart');
-      const result = await runZsdeploy(args, 180000);
+      // Alleen naar de aangevinkte devices; namen moeten in devices.txt staan.
+      if (Array.isArray(body.devices)) {
+        const known = new Set(readDevices().map(d => d.name).concat(['usb']));
+        const names = body.devices.map(String).filter(n => known.has(n));
+        if (!names.length) {
+          return sendJson(res, {ok: false, output: 'geen (bekende) devices geselecteerd'}, 400);
+        }
+        args.push('--only', names.join(','));
+      }
+      // 54 MB naar meerdere scanners over wifi duurt minuten; ruim nemen.
+      const result = await runZsdeploy(args, 30 * 60 * 1000);
       return sendJson(res, result);
     }
 

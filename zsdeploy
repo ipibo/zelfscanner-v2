@@ -43,7 +43,11 @@ err(){ printf '%s[FAIL]%s %s\n' "$C_RED" "$C_RST" "$*" >&2; }
 # ============================================================
 TMPDIR_ZS="$(mktemp -d "${TMPDIR:-/tmp}/zsdeploy.XXXXXX")"
 cleanup(){ rm -rf "$TMPDIR_ZS"; }
-trap cleanup EXIT INT TERM
+# INT/TERM: echt stoppen. Alleen opruimen en doorlopen liet een afgebroken
+# push (editor-timeout) zonder tijdelijke map verder draaien, waarna de swap
+# op de devices mislukte.
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 sanitize(){ printf '%s' "${1//[:\/]/_}"; }
 
@@ -195,6 +199,15 @@ scan_adb_devices(){
 #   wifi (twee pushes tegelijk naar één device = corrupt pack).
 # - Bekend device op een nieuw IP: devices.txt wordt bijgewerkt, net als een
 #   ontbrekend serienummer bij een device dat op IP herkend werd.
+# --only naam1,naam2: alleen deze devices (namen uit devices.txt, of "usb").
+# Leeg = alle live devices. Geldt voor push en de --restart erna.
+ONLY_NAMES=""
+only_allows(){
+  [ -z "$ONLY_NAMES" ] && return 0
+  case ",$ONLY_NAMES," in *",$1,"*) return 0 ;; esac
+  return 1
+}
+
 T_SERIAL=(); T_NAME=(); T_MODEL=(); T_RELEASE=(); T_ABI=(); T_HW=()
 list_targets(){
   local model_filter="${1:-}"
@@ -242,6 +255,7 @@ list_targets(){
       warn "$name (${hw}) hangt aan USB en wifi — telt één keer, via wifi"
       continue
     fi
+    only_allows "$name" || continue
     T_SERIAL+=("$serial"); T_NAME+=("$name"); T_MODEL+=("$model"); T_RELEASE+=("$release"); T_ABI+=("$abi"); T_HW+=("$hw")
   done
 }
@@ -441,6 +455,7 @@ cmd_push(){
       --dry-run) dryrun=1 ;;
       --restart) restart=1 ;;
       --model) shift; model_filter="${1:-}" ;;
+      --only) shift; ONLY_NAMES="${1:-}" ;;
       -*) err "onbekende optie: $1"; exit 1 ;;
       *) args+=("$1") ;;
     esac
@@ -455,7 +470,15 @@ cmd_push(){
   build_local_file_list "$pack_dir"
   list_targets "$model_filter"
   report_skipped
-  [ "${#T_SERIAL[@]}" -eq 0 ] && { err "geen devices met status 'device' gevonden (na filter)."; exit 1; }
+  [ "${#T_SERIAL[@]}" -eq 0 ] && { err "geen devices met status 'device' gevonden (na filter${ONLY_NAMES:+, --only $ONLY_NAMES})."; exit 1; }
+  if [ -n "$ONLY_NAMES" ]; then
+    local want found_one
+    for want in $(printf '%s' "$ONLY_NAMES" | tr ',' ' '); do
+      found_one=0
+      for i in "${!T_NAME[@]}"; do [ "${T_NAME[$i]}" = "$want" ] && found_one=1; done
+      [ "$found_one" -eq 1 ] || warn "$want niet bereikbaar (niet in adb devices) — overgeslagen"
+    done
+  fi
 
   # per device het manifest van zijn story; ontbreekt er een, dan niets pushen
   local i T_MANIFEST=() story dev_manifest
@@ -847,6 +870,7 @@ opties (waar van toepassing):
   --model <substr>     filter op ro.product.model (bv. MC18, PS20)
   --parallel           (push) devices in de achtergrond, gebundelde output achteraf
   --dry-run            (push) laat zien wat er zou gebeuren, raakt niets aan
+  --only a,b           (push) alleen naar deze devices (namen uit devices.txt)
   --restart            (push) restart de app na een succesvolle push
 
 env:
