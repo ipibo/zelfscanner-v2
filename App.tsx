@@ -193,6 +193,9 @@ function App(): React.JSX.Element {
         javaScriptEnabled
         domStorageEnabled
         mediaPlaybackRequiresUserAction={false}
+        // Android default is pinch-zoom on; visitors could zoom the pack.
+        setBuiltInZoomControls={false}
+        setDisplayZoomControls={false}
         onMessage={onWebMessage}
         onLoadEnd={() => {
           setPackStatus('loaded');

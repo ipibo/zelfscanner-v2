@@ -175,7 +175,6 @@
   // één keer, daarna door naar de volgende stop.
   function playVideo(src, asReward) {
     video.loop = !asReward;
-    video.muted = !asReward;
     video.style.display = '';
     video.src = src;
     // Old WebKit (Android 5.1 WebView) doesn't reliably pick up a new
@@ -183,6 +182,10 @@
     // this the element can silently keep showing the previous video.
     // Confirmed on-device 2026-08-19.
     video.load();
+    // muted pas na load(): <video> heeft geen muted-attribuut meer (stamt uit
+    // de losse HTML-versie) en deze Chromium kan bij load() terugvallen op de
+    // attribuutwaarde, waardoor de beloning-video stil bleef op de MC18N0.
+    video.muted = !asReward;
     videoReward = asReward ? src : null;
     safePlay(video, 'video ' + src, function () {
       // Desktop-preview: autoplay met geluid mag daar pas na een klik. Dan
