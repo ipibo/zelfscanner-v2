@@ -365,6 +365,65 @@
         display: block;
       }
 
+      #storybar {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 12px;
+      }
+      #storybar select {
+        flex: 1;
+        min-width: 0;
+        padding: 6px;
+        font-size: 13px;
+        background: #000;
+        color: #eee;
+        border: 1px solid #444;
+        border-radius: 3px;
+      }
+      #storybar button {
+        padding: 6px 8px;
+        font-size: 12px;
+        background: #444;
+        color: #eee;
+        border: 0;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      #storybar button:hover {
+        background: #555;
+      }
+      #device-stories {
+        background: #1c1c1c;
+        padding: 0 16px 10px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 14px;
+        border-bottom: 1px solid #2a2a2a;
+        font-size: 12px;
+        color: #999;
+      }
+      #device-stories:empty {
+        display: none;
+      }
+      #device-stories label {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-family: monospace;
+      }
+      #device-stories select {
+        padding: 3px 4px;
+        font-size: 12px;
+        background: #000;
+        color: #eee;
+        border: 1px solid #444;
+        border-radius: 3px;
+      }
+      #device-stories select.other {
+        color: #ffff5c;
+        border-color: #ffff5c;
+      }
       #deploybar {
         background: #1c1c1c;
         padding: 10px 16px;
@@ -494,6 +553,10 @@
     <div id="layout">
       <div id="scenes">
         <h1>Story</h1>
+        <div id="storybar">
+          <select id="story-select" title="welke story je bewerkt"></select>
+          <button id="new-story" type="button" title="nieuwe story, als kopie van deze">+ nieuw</button>
+        </div>
         <div id="scene-list"></div>
       </div>
 
@@ -514,6 +577,7 @@
           <label><input type="checkbox" id="restart-app" /> herstart app na push</label>
           <button id="deploy">Push naar scanners</button>
         </div>
+        <div id="device-stories"></div>
         <pre id="deploy-log"></pre>
         <div id="errors"></div>
         <div id="frame-wrap">
@@ -551,6 +615,15 @@
         }
         var manifest = emptyManifest();
         var loaded = false;
+        // Welke story je bewerkt: standaard = pack/manifest.json, anders
+        // stories/<naam>.json. Zie tools/preview-server.js.
+        var DEFAULT_STORY = 'standaard';
+        var story = DEFAULT_STORY;
+        var stories = [DEFAULT_STORY];
+        var devices = []; // [{name, ip, story}] uit devices.txt
+        // JSON van het laatst geladen/opgeslagen manifest, om niet-opgeslagen
+        // wijzigingen te zien vóór je van story wisselt.
+        var savedJson = null;
         var assets = {video: [], audio: [], image: []};
         // Vaste onderdelen van de lijst; stops hebben index 0 en hoger.
         var SPLASH = -1;
@@ -658,8 +731,16 @@
 
         // ---- data loading ----
 
+        function storyQuery() {
+          return story === DEFAULT_STORY ? '' : '?story=' + encodeURIComponent(story);
+        }
+
+        function isDirty() {
+          return loaded && JSON.stringify(manifest) !== savedJson;
+        }
+
         function loadManifest() {
-          return fetch('/api/manifest')
+          return fetch('/api/manifest' + storyQuery())
             .then(function (r) {
               return r.json();
             })
@@ -690,9 +771,11 @@
                 notes.push('nieuwe reset-barcode ' + manifest.resetScan + ' voorgesteld');
               }
               if (notes.length) setStatus(notes.join(', ') + ' — nog niet opgeslagen');
+              else setStatus('story "' + story + '" geladen');
               loaded = true;
               activeIndex = SPLASH;
               versionEl.value = manifest.version || '0.3.0';
+              savedJson = notes.length ? null : JSON.stringify(manifest);
               renderAll();
               syncPreview();
             })
@@ -1314,7 +1397,7 @@
         }
 
         document.getElementById('barcodes').onclick = function () {
-          window.open('barcodes.html', '_blank');
+          window.open('barcodes.html' + storyQuery(), '_blank');
         };
         document.getElementById('library').onclick = function () {
           window.open('library.html', '_blank');
@@ -1326,7 +1409,7 @@
           manifest.version = versionEl.value || '0.3.0';
           errorsEl.classList.remove('show');
           setStatus('opslaan…');
-          fetch('/api/manifest', {
+          fetch('/api/manifest' + storyQuery(), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(manifest),
@@ -1338,8 +1421,11 @@
             })
             .then(function (res) {
               if (res.data.ok) {
-                setStatus('opgeslagen ✓ (' + new Date().toLocaleTimeString() + ')');
+                setStatus('"' + story + '" opgeslagen ✓ (' + new Date().toLocaleTimeString() + ')');
+                savedJson = JSON.stringify(manifest);
                 reloadFrame();
+                // een nieuwe story bestaat pas na de eerste keer opslaan
+                if (stories.indexOf(story) === -1) loadStories();
               } else {
                 setStatus((res.data.errors || []).length + ' fout(en) — niet opgeslagen', true);
                 errorsEl.textContent = (res.data.errors || []).join('\n');
@@ -1458,7 +1544,128 @@
             });
         };
 
+        // ---- stories + welke story op welk device ----
+
+        var storySelectEl = document.getElementById('story-select');
+        var deviceStoriesEl = document.getElementById('device-stories');
+
+        function renderStorySelect() {
+          storySelectEl.innerHTML = '';
+          var names = stories.slice();
+          if (names.indexOf(story) === -1) names.push(story); // nieuw, nog niet opgeslagen
+          names.forEach(function (n) {
+            var opt = document.createElement('option');
+            opt.value = n;
+            opt.textContent = n + (stories.indexOf(n) === -1 ? ' (nieuw)' : '');
+            storySelectEl.appendChild(opt);
+          });
+          storySelectEl.value = story;
+        }
+
+        function renderDeviceStories() {
+          deviceStoriesEl.innerHTML = '';
+          if (!devices.length) return;
+          var title = document.createElement('span');
+          title.textContent = 'story per device:';
+          deviceStoriesEl.appendChild(title);
+          devices.forEach(function (d) {
+            var label = document.createElement('label');
+            label.title = d.ip;
+            label.appendChild(document.createTextNode(d.name));
+            var sel = document.createElement('select');
+            stories.forEach(function (n) {
+              var opt = document.createElement('option');
+              opt.value = n;
+              opt.textContent = n;
+              sel.appendChild(opt);
+            });
+            sel.value = d.story;
+            if (d.story !== DEFAULT_STORY) sel.className = 'other';
+            sel.onchange = function () {
+              sel.disabled = true;
+              fetch('/api/device-story', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({device: d.name, story: sel.value}),
+              })
+                .then(function (r) {
+                  return r.json();
+                })
+                .then(function (data) {
+                  if (!data.ok) throw new Error(data.error || 'onbekende fout');
+                  devices = data.devices;
+                  setStatus(d.name + ' krijgt "' + sel.value + '" bij de volgende push');
+                  renderDeviceStories();
+                })
+                .catch(function (e) {
+                  setStatus('story toewijzen mislukt: ' + e.message, true);
+                  sel.value = d.story;
+                  sel.disabled = false;
+                });
+            };
+            label.appendChild(sel);
+            deviceStoriesEl.appendChild(label);
+          });
+        }
+
+        function loadStories() {
+          return fetch('/api/stories')
+            .then(function (r) {
+              return r.json();
+            })
+            .then(function (data) {
+              stories = data.stories || [DEFAULT_STORY];
+              devices = data.devices || [];
+              renderStorySelect();
+              renderDeviceStories();
+            })
+            .catch(function (e) {
+              setStatus('stories ophalen mislukt: ' + e.message, true);
+            });
+        }
+
+        function confirmDiscard() {
+          return !isDirty() || window.confirm('"' + story + '" heeft niet-opgeslagen wijzigingen. Weggooien?');
+        }
+
+        storySelectEl.onchange = function () {
+          if (!confirmDiscard()) {
+            storySelectEl.value = story;
+            return;
+          }
+          story = storySelectEl.value;
+          renderStorySelect(); // haalt een niet-opgeslagen nieuwe story weg
+          loadManifest();
+        };
+
+        // Nieuwe story = kopie van wat je nu open hebt; bestaat pas na Opslaan.
+        document.getElementById('new-story').onclick = function () {
+          var name = window.prompt('Naam van de nieuwe story (a-z, 0-9, - en _):', '');
+          if (name === null) return;
+          name = name.trim().toLowerCase().replace(/\s+/g, '-');
+          if (!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(name)) {
+            setStatus('ongeldige naam "' + name + '" — alleen a-z, 0-9, - en _', true);
+            return;
+          }
+          if (stories.indexOf(name) !== -1) {
+            setStatus('story "' + name + '" bestaat al', true);
+            return;
+          }
+          story = name;
+          savedJson = null;
+          renderStorySelect();
+          setStatus('nieuwe story "' + name + '" (kopie) — nog niet opgeslagen');
+        };
+
+        window.addEventListener('beforeunload', function (e) {
+          if (isDirty()) {
+            e.preventDefault();
+            e.returnValue = '';
+          }
+        });
+
         refreshDevices();
+        loadStories();
         loadAssets().then(loadManifest);
       })();
     </script>

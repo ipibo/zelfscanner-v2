@@ -229,7 +229,7 @@
         var gridEl = document.getElementById('grid');
         var statusEl = document.getElementById('status');
 
-        fetch('/api/manifest')
+        fetch('/api/manifest' + location.search) // ?story=<naam> vanuit de editor
           .then(function (r) {
             return r.json();
           })

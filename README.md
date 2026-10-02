@@ -498,6 +498,31 @@ via USB, zie hierboven) en op hetzelfde WiFi zitten. De editor voert dit
 altijd tegen alle devices uit `devices.txt` uit — er is geen knop die maar
 naar één device pusht.
 
+### Andere story per device
+
+Niet elk device hoeft dezelfde story te draaien. `pack/manifest.json` is de
+story **standaard**; extra stories staan los in `stories/<naam>.json`. De media
+blijft gedeeld in `pack/assets/` en gaat naar elk device.
+
+- Linksboven in de editor kies je welke story je bewerkt. **+ nieuw** maakt een
+  kopie van de story die open staat; hij bestaat pas na **Opslaan**.
+  Barcodes (PDF) toont de barcodes van de open story.
+- Onder de pushbalk staat per device een dropdown: welke story dat device
+  krijgt. Dat wordt meteen in `devices.txt` gezet, als derde kolom:
+
+  ```
+  mc6 192.168.1.31 kids
+  mc7 192.168.1.5 kids
+  ```
+
+  Geen derde kolom = standaard. `zsdeploy pair` laat die kolom staan.
+- Bij een push zet `zsdeploy` voor zo'n device `stories/<naam>.json` als
+  `manifest.json` in de staging, en vergelijkt daartegen (byte-diff). Bestaat
+  de story niet, dan stopt de push vóórdat er een device wordt aangeraakt.
+  `./zsdeploy push --dry-run` laat per device de story zien.
+- Let op: `zsdeploy status` vergelijkt versies nog met de meerderheid; devices
+  met een andere story (en ander versienummer) staan daar als AFWIJKEND.
+
 # Troubleshooting
 
 If you can't get this to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.

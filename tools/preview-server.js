@@ -18,6 +18,71 @@ const PACK_DIR = path.join(ROOT, 'pack');
 const MANIFEST_PATH = path.join(PACK_DIR, 'manifest.json');
 const PORT = Number(process.argv[2]) || 8934;
 
+// Meerdere stories: pack/manifest.json is "standaard", de rest staat los in
+// stories/<naam>.json (buiten pack/, dus niet op elk device). Welke story een
+// device krijgt staat als derde kolom in devices.txt; zsdeploy push zet die
+// dan als manifest.json op dat device. Media blijft gedeeld in pack/assets.
+const STORIES_DIR = path.join(ROOT, 'stories');
+const DEVICES_FILE = path.join(ROOT, 'devices.txt');
+const DEFAULT_STORY = 'standaard';
+const STORY_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+
+// null = ongeldige naam (ook bescherming tegen ../ in de query).
+function storyPath(name) {
+  if (!name || name === DEFAULT_STORY) return MANIFEST_PATH;
+  if (!STORY_NAME_RE.test(name)) return null;
+  return path.join(STORIES_DIR, name + '.json');
+}
+
+function listStories() {
+  let extra = [];
+  try {
+    extra = fs
+      .readdirSync(STORIES_DIR)
+      .filter(f => f.endsWith('.json'))
+      .map(f => f.slice(0, -5))
+      .filter(n => STORY_NAME_RE.test(n) && n !== DEFAULT_STORY)
+      .sort();
+  } catch {
+    // geen stories/ map = alleen standaard
+  }
+  return [DEFAULT_STORY].concat(extra);
+}
+
+// devices.txt: "naam ip [story]", '#' = comment.
+function readDevices() {
+  let src = '';
+  try {
+    src = fs.readFileSync(DEVICES_FILE, 'utf8');
+  } catch {
+    return [];
+  }
+  return src
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l => l && !l.startsWith('#'))
+    .map(l => l.split(/\s+/))
+    .filter(cols => cols.length >= 2)
+    .map(cols => ({name: cols[0], ip: cols[1], story: cols[2] || DEFAULT_STORY}));
+}
+
+// Herschrijft alleen de regel van dit device; comments en volgorde blijven.
+function setDeviceStory(deviceName, story) {
+  const src = fs.readFileSync(DEVICES_FILE, 'utf8');
+  let found = false;
+  const out = src.split('\n').map(line => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) return line;
+    const cols = trimmed.split(/\s+/);
+    if (cols[0] !== deviceName || cols.length < 2) return line;
+    found = true;
+    return story === DEFAULT_STORY ? `${cols[0]} ${cols[1]}` : `${cols[0]} ${cols[1]} ${story}`;
+  });
+  if (!found) return false;
+  fs.writeFileSync(DEVICES_FILE, out.join('\n'));
+  return true;
+}
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
@@ -243,9 +308,32 @@ http
       return sendJson(res, listAssets());
     }
 
+    if (urlPath === '/api/stories' && req.method === 'GET') {
+      return sendJson(res, {stories: listStories(), devices: readDevices()});
+    }
+
+    if (urlPath === '/api/device-story' && req.method === 'POST') {
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (e) {
+        return sendJson(res, {ok: false, error: 'ongeldige JSON: ' + e.message}, 400);
+      }
+      const story = String(body.story || DEFAULT_STORY);
+      if (!listStories().includes(story)) {
+        return sendJson(res, {ok: false, error: `story "${story}" bestaat niet (eerst opslaan)`}, 400);
+      }
+      if (!setDeviceStory(String(body.device || ''), story)) {
+        return sendJson(res, {ok: false, error: `device "${body.device}" niet gevonden in devices.txt`}, 404);
+      }
+      return sendJson(res, {ok: true, devices: readDevices()});
+    }
+
     if (urlPath === '/api/manifest' && req.method === 'GET') {
-      return fs.readFile(MANIFEST_PATH, 'utf8', (err, data) => {
-        if (err) return sendJson(res, {error: 'manifest.json niet gevonden'}, 404);
+      const storyFile = storyPath(new URL(req.url, 'http://localhost').searchParams.get('story'));
+      if (!storyFile) return sendJson(res, {error: 'ongeldige story-naam'}, 400);
+      return fs.readFile(storyFile, 'utf8', (err, data) => {
+        if (err) return sendJson(res, {error: path.basename(storyFile) + ' niet gevonden'}, 404);
         res.writeHead(200, {'Content-Type': 'application/json; charset=utf-8'});
         res.end(data);
       });
@@ -351,6 +439,10 @@ http
     }
 
     if (urlPath === '/api/manifest' && req.method === 'POST') {
+      const storyFile = storyPath(new URL(req.url, 'http://localhost').searchParams.get('story'));
+      if (!storyFile) {
+        return sendJson(res, {ok: false, errors: ['ongeldige story-naam (alleen a-z, 0-9, - en _)']}, 400);
+      }
       let manifest;
       try {
         manifest = await readJsonBody(req);
@@ -361,7 +453,8 @@ http
       if (errors.length > 0) {
         return sendJson(res, {ok: false, errors}, 400);
       }
-      fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + '\n');
+      fs.mkdirSync(path.dirname(storyFile), {recursive: true});
+      fs.writeFileSync(storyFile, JSON.stringify(manifest, null, 2) + '\n');
       return sendJson(res, {ok: true});
     }
 
