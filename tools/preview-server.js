@@ -11,14 +11,77 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const {execFile} = require('child_process');
+const {EXT, validateManifest} = require('./manifest-schema');
 
 const ROOT = path.resolve(__dirname, '..');
 const PACK_DIR = path.join(ROOT, 'pack');
 const MANIFEST_PATH = path.join(PACK_DIR, 'manifest.json');
 const PORT = Number(process.argv[2]) || 8934;
-const BARCODE_RE = /^\d{8,14}$/;
-const COLOR_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
-const MAX_INSTRUCTION_SECONDS = 60;
+
+// Meerdere stories: pack/manifest.json is "standaard", de rest staat los in
+// stories/<naam>.json (buiten pack/, dus niet op elk device). Welke story een
+// device krijgt staat als derde kolom in devices.txt; zsdeploy push zet die
+// dan als manifest.json op dat device. Media blijft gedeeld in pack/assets.
+const STORIES_DIR = path.join(ROOT, 'stories');
+const DEVICES_FILE = path.join(ROOT, 'devices.txt');
+const DEFAULT_STORY = 'standaard';
+const STORY_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+
+// null = ongeldige naam (ook bescherming tegen ../ in de query).
+function storyPath(name) {
+  if (!name || name === DEFAULT_STORY) return MANIFEST_PATH;
+  if (!STORY_NAME_RE.test(name)) return null;
+  return path.join(STORIES_DIR, name + '.json');
+}
+
+function listStories() {
+  let extra = [];
+  try {
+    extra = fs
+      .readdirSync(STORIES_DIR)
+      .filter(f => f.endsWith('.json'))
+      .map(f => f.slice(0, -5))
+      .filter(n => STORY_NAME_RE.test(n) && n !== DEFAULT_STORY)
+      .sort();
+  } catch {
+    // geen stories/ map = alleen standaard
+  }
+  return [DEFAULT_STORY].concat(extra);
+}
+
+// devices.txt: "naam ip [story]", '#' = comment.
+function readDevices() {
+  let src = '';
+  try {
+    src = fs.readFileSync(DEVICES_FILE, 'utf8');
+  } catch {
+    return [];
+  }
+  return src
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l => l && !l.startsWith('#'))
+    .map(l => l.split(/\s+/))
+    .filter(cols => cols.length >= 2)
+    .map(cols => ({name: cols[0], ip: cols[1], story: cols[2] || DEFAULT_STORY}));
+}
+
+// Herschrijft alleen de regel van dit device; comments en volgorde blijven.
+function setDeviceStory(deviceName, story) {
+  const src = fs.readFileSync(DEVICES_FILE, 'utf8');
+  let found = false;
+  const out = src.split('\n').map(line => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) return line;
+    const cols = trimmed.split(/\s+/);
+    if (cols[0] !== deviceName || cols.length < 2) return line;
+    found = true;
+    return story === DEFAULT_STORY ? `${cols[0]} ${cols[1]}` : `${cols[0]} ${cols[1]} ${story}`;
+  });
+  if (!found) return false;
+  fs.writeFileSync(DEVICES_FILE, out.join('\n'));
+  return true;
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -32,9 +95,9 @@ const MIME = {
   '.webp': 'image/webp',
 };
 
-const VIDEO_EXT = new Set(['.mp4', '.mov', '.webm']);
-const AUDIO_EXT = new Set(['.mp3', '.wav', '.m4a']);
-const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+const VIDEO_EXT = EXT.video;
+const AUDIO_EXT = EXT.audio;
+const IMAGE_EXT = EXT.image;
 
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -74,91 +137,6 @@ function readRawBody(req, maxBytes) {
 function sendJson(res, obj, code = 200) {
   res.writeHead(code, {'Content-Type': 'application/json; charset=utf-8'});
   res.end(JSON.stringify(obj));
-}
-
-// Same shape validate() from tools/build-manifest.js enforces on the
-// route -> manifest build step -- kept in sync by hand since the editor
-// writes manifest.json directly, bypassing that build step.
-function validateManifest(manifest) {
-  const errors = [];
-  if (!manifest || typeof manifest !== 'object') return ['manifest is geen object'];
-  if (!Array.isArray(manifest.scenes) || manifest.scenes.length === 0) {
-    return ['manifest.scenes ontbreekt of is leeg'];
-  }
-
-  // Zonder reset-barcode kan een scanner na de laatste scene nooit meer terug
-  // naar het splash-scherm, dus verplicht.
-  if (!manifest.resetScan) {
-    errors.push('splash: reset-barcode ontbreekt (terug naar het splash-scherm)');
-  } else if (!BARCODE_RE.test(manifest.resetScan)) {
-    errors.push(`splash: reset-barcode "${manifest.resetScan}" ziet er niet uit als een barcode (8-14 cijfers)`);
-  } else {
-    manifest.scenes.forEach(scene => {
-      if (scene.expectScan === manifest.resetScan) {
-        errors.push(`splash: reset-barcode "${manifest.resetScan}" is ook de scan van scene "${scene.id}" — kies een andere`);
-      }
-    });
-  }
-  const splash = manifest.splash || {};
-  if (typeof splash !== 'object') {
-    errors.push('splash is geen object');
-  } else {
-    if (splash.sliderColor && !COLOR_RE.test(splash.sliderColor)) {
-      errors.push(`splash: slider-kleur "${splash.sliderColor}" is geen hex-kleur (bv. #ffff5c)`);
-    }
-    if (splash.image && !fs.existsSync(path.join(PACK_DIR, splash.image))) {
-      errors.push(`splash: afbeelding niet gevonden: ${splash.image}`);
-    }
-  }
-  const instruction = manifest.instruction || {};
-  if (typeof instruction !== 'object') {
-    errors.push('instruction is geen object');
-  } else {
-    const secs = instruction.seconds;
-    if (secs !== undefined && !(typeof secs === 'number' && secs >= 0 && secs <= MAX_INSTRUCTION_SECONDS)) {
-      errors.push(`luisterinstructie: duur moet 0 t/m ${MAX_INSTRUCTION_SECONDS} seconden zijn (0 = overslaan)`);
-    }
-    if (instruction.text !== undefined && typeof instruction.text !== 'string') {
-      errors.push('luisterinstructie: tekst is geen tekst');
-    }
-  }
-
-  const ids = new Set();
-  manifest.scenes.forEach((scene, i) => {
-    if (!scene.id) {
-      errors.push(`scene #${i + 1}: mist "id"`);
-      return;
-    }
-    if (ids.has(scene.id)) {
-      errors.push(`dubbele scene id: "${scene.id}"`);
-    }
-    ids.add(scene.id);
-    if (scene.expectScan && !BARCODE_RE.test(scene.expectScan)) {
-      errors.push(`scene "${scene.id}": scan "${scene.expectScan}" ziet er niet uit als een barcode (8-14 cijfers)`);
-    }
-    // Een scene is óf een video, óf een foto met audio-narratie, óf een
-    // puzzel met audio-narratie -- nooit twee beelddragers tegelijk.
-    const visuals = ['video', 'image', 'puzzle'].filter(f => scene[f]);
-    if (visuals.length > 1) {
-      errors.push(`scene "${scene.id}": ${visuals.join(' en ')} kunnen niet allebei tegelijk (kies één)`);
-    }
-    if (scene.video && scene.audio) {
-      errors.push(`scene "${scene.id}": video en audio kunnen niet allebei tegelijk (video staat op zichzelf, narratie hoort bij image of puzzle)`);
-    }
-    ['audio', 'video', 'image', 'puzzle'].forEach(field => {
-      if (scene[field] && !fs.existsSync(path.join(PACK_DIR, scene[field]))) {
-        errors.push(`scene "${scene.id}": ${field} bestand niet gevonden: ${scene[field]}`);
-      }
-    });
-  });
-
-  manifest.scenes.forEach(scene => {
-    if (scene.next && !ids.has(scene.next)) {
-      errors.push(`scene "${scene.id}": next "${scene.next}" verwijst naar een scene die niet bestaat`);
-    }
-  });
-
-  return errors;
 }
 
 function listAssets() {
@@ -275,7 +253,10 @@ function normalizeVideo(inputPath, outputPath) {
         '-pix_fmt', 'yuv420p',
         '-crf', '20',
         '-preset', 'medium',
-        '-an', // video scenes always render muted (see pack/index.html), narration is a separate audio field
+        // Geluid blijft erin: een video als beloning speelt met geluid, als
+        // hint stil (pack/runtime.js). AAC-LC speelt ook op de MC18N0.
+        '-c:a', 'aac',
+        '-b:a', '128k',
         '-movflags', '+faststart',
         outputPath,
       ],
@@ -327,9 +308,32 @@ http
       return sendJson(res, listAssets());
     }
 
+    if (urlPath === '/api/stories' && req.method === 'GET') {
+      return sendJson(res, {stories: listStories(), devices: readDevices()});
+    }
+
+    if (urlPath === '/api/device-story' && req.method === 'POST') {
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch (e) {
+        return sendJson(res, {ok: false, error: 'ongeldige JSON: ' + e.message}, 400);
+      }
+      const story = String(body.story || DEFAULT_STORY);
+      if (!listStories().includes(story)) {
+        return sendJson(res, {ok: false, error: `story "${story}" bestaat niet (eerst opslaan)`}, 400);
+      }
+      if (!setDeviceStory(String(body.device || ''), story)) {
+        return sendJson(res, {ok: false, error: `device "${body.device}" niet gevonden in devices.txt`}, 404);
+      }
+      return sendJson(res, {ok: true, devices: readDevices()});
+    }
+
     if (urlPath === '/api/manifest' && req.method === 'GET') {
-      return fs.readFile(MANIFEST_PATH, 'utf8', (err, data) => {
-        if (err) return sendJson(res, {error: 'manifest.json niet gevonden'}, 404);
+      const storyFile = storyPath(new URL(req.url, 'http://localhost').searchParams.get('story'));
+      if (!storyFile) return sendJson(res, {error: 'ongeldige story-naam'}, 400);
+      return fs.readFile(storyFile, 'utf8', (err, data) => {
+        if (err) return sendJson(res, {error: path.basename(storyFile) + ' niet gevonden'}, 404);
         res.writeHead(200, {'Content-Type': 'application/json; charset=utf-8'});
         res.end(data);
       });
@@ -435,17 +439,22 @@ http
     }
 
     if (urlPath === '/api/manifest' && req.method === 'POST') {
+      const storyFile = storyPath(new URL(req.url, 'http://localhost').searchParams.get('story'));
+      if (!storyFile) {
+        return sendJson(res, {ok: false, errors: ['ongeldige story-naam (alleen a-z, 0-9, - en _)']}, 400);
+      }
       let manifest;
       try {
         manifest = await readJsonBody(req);
       } catch (e) {
         return sendJson(res, {ok: false, errors: ['ongeldige JSON: ' + e.message]}, 400);
       }
-      const errors = validateManifest(manifest);
+      const errors = validateManifest(manifest, PACK_DIR);
       if (errors.length > 0) {
         return sendJson(res, {ok: false, errors}, 400);
       }
-      fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + '\n');
+      fs.mkdirSync(path.dirname(storyFile), {recursive: true});
+      fs.writeFileSync(storyFile, JSON.stringify(manifest, null, 2) + '\n');
       return sendJson(res, {ok: true});
     }
 

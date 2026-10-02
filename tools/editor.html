@@ -84,13 +84,22 @@
       .scene-item.fixed {
         border-left: 3px solid #ffff5c;
       }
-      .scene-item.fixed + .scene-item:not(.fixed) {
+      .scene-item.fixed + .scene-item:not(.fixed),
+      .scene-item.fixed.last {
         margin-top: 10px;
       }
       .scene-item .tag {
         font-size: 10px;
         opacity: 0.6;
         flex-shrink: 0;
+        margin-left: auto;
+      }
+      .scene-item .tag.warn {
+        color: #fc6;
+        opacity: 1;
+      }
+      .scene-item.active .tag.warn {
+        color: #fff;
       }
       #form .intro {
         font-size: 11px;
@@ -108,7 +117,7 @@
       #add-scene {
         width: 100%;
         padding: 8px;
-        margin-top: 8px;
+        margin-top: 4px;
         background: #2a6;
         color: #fff;
         border: 0;
@@ -161,6 +170,73 @@
       }
       #form select {
         color: #eee;
+      }
+      #form .row {
+        display: flex;
+        gap: 6px;
+      }
+      #form .row input:not([type='color']) {
+        flex: 1;
+      }
+      #form input.plain {
+        font-family: sans-serif;
+        color: #eee;
+      }
+      #form .small-btn {
+        padding: 4px 12px;
+        font-size: 11px;
+        background: #444;
+        color: #eee;
+        border: 0;
+        border-radius: 3px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      #form .small-btn:hover {
+        background: #555;
+      }
+      #form .part {
+        margin-top: 18px;
+        padding: 10px 12px 12px;
+        border: 1px solid #2e2e2e;
+        border-radius: 4px;
+      }
+      #form .part.previewing {
+        border-color: #2a6;
+      }
+      #form .part.previewing .small-btn {
+        background: #2a6;
+        color: #fff;
+      }
+      #form .part-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      #form .part-head h2 {
+        font-size: 12px;
+        margin: 0;
+        color: #ddd;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      #form .radio-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 16px;
+      }
+      #form .radio-row label {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin: 0;
+        font-size: 12px;
+        color: #ccc;
+        cursor: pointer;
+      }
+      #form .radio-row input {
+        width: auto;
+        margin: 0;
       }
       #form .hint {
         font-size: 11px;
@@ -289,6 +365,65 @@
         display: block;
       }
 
+      #storybar {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 12px;
+      }
+      #storybar select {
+        flex: 1;
+        min-width: 0;
+        padding: 6px;
+        font-size: 13px;
+        background: #000;
+        color: #eee;
+        border: 1px solid #444;
+        border-radius: 3px;
+      }
+      #storybar button {
+        padding: 6px 8px;
+        font-size: 12px;
+        background: #444;
+        color: #eee;
+        border: 0;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      #storybar button:hover {
+        background: #555;
+      }
+      #device-stories {
+        background: #1c1c1c;
+        padding: 0 16px 10px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 14px;
+        border-bottom: 1px solid #2a2a2a;
+        font-size: 12px;
+        color: #999;
+      }
+      #device-stories:empty {
+        display: none;
+      }
+      #device-stories label {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-family: monospace;
+      }
+      #device-stories select {
+        padding: 3px 4px;
+        font-size: 12px;
+        background: #000;
+        color: #eee;
+        border: 1px solid #444;
+        border-radius: 3px;
+      }
+      #device-stories select.other {
+        color: #ffff5c;
+        border-color: #ffff5c;
+      }
       #deploybar {
         background: #1c1c1c;
         padding: 10px 16px;
@@ -399,6 +534,10 @@
       #simbar button:hover {
         background: #555;
       }
+      #simbar #dock.on {
+        background: #2a6;
+        color: #fff;
+      }
       #simlog {
         font-size: 11px;
         color: #7cfc00;
@@ -413,9 +552,12 @@
   <body>
     <div id="layout">
       <div id="scenes">
-        <h1>Scenes</h1>
+        <h1>Story</h1>
+        <div id="storybar">
+          <select id="story-select" title="welke story je bewerkt"></select>
+          <button id="new-story" type="button" title="nieuwe story, als kopie van deze">+ nieuw</button>
+        </div>
         <div id="scene-list"></div>
-        <button id="add-scene">+ scene toevoegen</button>
       </div>
 
       <div id="form"></div>
@@ -435,6 +577,7 @@
           <label><input type="checkbox" id="restart-app" /> herstart app na push</label>
           <button id="deploy">Push naar scanners</button>
         </div>
+        <div id="device-stories"></div>
         <pre id="deploy-log"></pre>
         <div id="errors"></div>
         <div id="frame-wrap">
@@ -448,6 +591,7 @@
             placeholder="bv. 8712345678901"
             autocomplete="off" />
           <button id="scan">Scan</button>
+          <button id="dock" title="scanner in of uit de cradle, zoals op het device">In cradle</button>
           <button id="reload">Herlaad preview</button>
           <div id="simlog"></div>
         </div>
@@ -456,20 +600,56 @@
 
     <script>
       (function () {
-        var manifest = {version: '0.1.0', scenes: [], splash: {}, instruction: {}};
+        // Vorm: zie tools/manifest-schema.js.
+        function emptyManifest() {
+          return {
+            version: '0.3.0',
+            resetScan: null,
+            splash: {},
+            instruction: {},
+            intro: {},
+            audiotour: {},
+            stops: [],
+            end: {},
+          };
+        }
+        var manifest = emptyManifest();
+        var loaded = false;
+        // Welke story je bewerkt: standaard = pack/manifest.json, anders
+        // stories/<naam>.json. Zie tools/preview-server.js.
+        var DEFAULT_STORY = 'standaard';
+        var story = DEFAULT_STORY;
+        var stories = [DEFAULT_STORY];
+        var devices = []; // [{name, ip, story}] uit devices.txt
+        // JSON van het laatst geladen/opgeslagen manifest, om niet-opgeslagen
+        // wijzigingen te zien vóór je van story wisselt.
+        var savedJson = null;
         var assets = {video: [], audio: [], image: []};
-        // Vaste onderdelen bovenaan de lijst, vóór scene 0:
-        // -1 = het splash-scherm, -2 = de luisterinstructie na het swipen.
+        // Vaste onderdelen van de lijst; stops hebben index 0 en hoger.
         var SPLASH = -1;
         var INSTRUCTION = -2;
+        var AUDIOTOUR = -3;
+        var END = -4;
+        var INTRO = -5;
+        // zelfde defaults als pack/runtime.js en pack/end.js
         var DEFAULT_INSTRUCTION_TEXT = 'Keep the scanner next to your ear';
-        var DEFAULT_INSTRUCTION_SECONDS = 5; // zelfde defaults als pack/runtime.js
+        var DEFAULT_INSTRUCTION_SECONDS = 5;
+        var DEFAULT_END_TEXT = 'Please gather at the self-checkout';
+        var DEFAULT_COLOR = '#ffff5c';
+        var HINT_TYPES = [
+          ['image', 'Afbeelding'],
+          ['puzzle', 'Puzzel'],
+          ['video', 'Video'],
+        ];
+        var REWARD_TYPES = [
+          ['audio', 'Audiotour'],
+          ['video', 'Video'],
+        ];
+        var KIND = {image: 'image', puzzle: 'image', video: 'video', audio: 'audio'};
+        var SHORT = {image: 'afb', puzzle: 'puzzel', video: 'video', audio: 'audio'};
         var activeIndex = SPLASH;
-        // Explicit mode per scene, independent of whether video/image is
-        // filled in yet -- deriving mode purely from field presence broke
-        // switching back to "Video" once its field was empty (fell through
-        // to "image" every render since scene.video was falsy).
-        var sceneMode = new WeakMap();
+        // Bij een stop: laat de preview de hint of de beloning zien.
+        var previewPart = 'hint';
 
         var sceneListEl = document.getElementById('scene-list');
         var formEl = document.getElementById('form');
@@ -492,42 +672,49 @@
           frame.src = '../pack/index.html?_=' + Date.now();
         }
 
-        // Jump the live preview to whichever scene is selected in the list
-        // (via runtime.js's window.__gotoScene, see pack/runtime.js) instead
-        // of leaving it wherever it happened to be.
-        function syncPreviewToActiveScene() {
-          var win = frame.contentWindow;
-          if (!win) return;
-          if (activeIndex === SPLASH) {
-            // kopie: de preview mag het object van de editor niet delen
-            if (typeof win.__gotoSplash === 'function') {
-              win.__gotoSplash(
-                JSON.parse(JSON.stringify(manifest.splash || {})),
-                manifest.resetScan || null,
-              );
-            }
-            return;
-          }
-          if (activeIndex === INSTRUCTION) {
-            if (typeof win.__gotoInstruction === 'function') {
-              win.__gotoInstruction(
-                JSON.parse(JSON.stringify(manifest.instruction || {})),
-              );
-            }
-            return;
-          }
-          var scene = manifest.scenes[activeIndex];
-          if (scene && typeof win.__gotoScene === 'function') {
-            win.__gotoScene(scene.id);
-          }
+        function copy(obj) {
+          // de preview mag de objecten van de editor niet delen
+          return JSON.parse(JSON.stringify(obj));
         }
 
+        function previewTarget() {
+          if (activeIndex === SPLASH) return {kind: 'splash'};
+          if (activeIndex === INSTRUCTION) return {kind: 'instruction'};
+          if (activeIndex === INTRO) return {kind: 'intro'};
+          if (activeIndex === AUDIOTOUR) return {kind: 'audiotour'};
+          if (activeIndex === END) return {kind: 'end'};
+          return {kind: previewPart, index: activeIndex};
+        }
+
+        // Zet de live preview op het geselecteerde onderdeel, met wat er nu
+        // in de editor staat (ook als het nog niet is opgeslagen). Via
+        // window.__editorPreview in pack/runtime.js.
+        function syncPreview() {
+          var win = frame.contentWindow;
+          if (!loaded || !win || typeof win.__editorPreview !== 'function') return;
+          win.__editorPreview(copy(manifest), previewTarget());
+        }
+
+        // Alleen het manifest in de preview bijwerken, niet verspringen: voor
+        // wijzigingen die niets in beeld veranderen (naam, barcode), zodat
+        // de test-scan de nieuwe code kent zonder dat de puzzel opnieuw begint.
+        function pushManifest() {
+          var win = frame.contentWindow;
+          if (!loaded || !win || typeof win.__editorPreview !== 'function') return;
+          win.__editorPreview(copy(manifest), null);
+        }
+        // Een herladen preview weet niet dat de scanner in de cradle staat.
+        frame.addEventListener('load', function () {
+          if (inCradle) sendDock();
+          syncPreview();
+        });
+
         // Willekeurige 13-cijferige code die nog nergens in de story gebruikt
-        // wordt (geen scene-scan, niet de reset-code), behalve door `self`.
+        // wordt (geen product-barcode, niet de reset-code), behalve door `self`.
         function randomBarcode(self) {
           var used = {};
-          manifest.scenes.forEach(function (s) {
-            if (s !== self && s.expectScan) used[s.expectScan] = true;
+          manifest.stops.forEach(function (s) {
+            if (s !== self && s.scan) used[s.scan] = true;
           });
           if (self !== SPLASH && manifest.resetScan) used[manifest.resetScan] = true;
           var code;
@@ -537,32 +724,60 @@
           } while (used[code]);
           return code;
         }
-        frame.addEventListener('load', syncPreviewToActiveScene);
+
+        function isIncomplete(stop) {
+          return !stop.scan || !(stop.hint && stop.hint.src) || !(stop.reward && stop.reward.src);
+        }
 
         // ---- data loading ----
 
+        function storyQuery() {
+          return story === DEFAULT_STORY ? '' : '?story=' + encodeURIComponent(story);
+        }
+
+        function isDirty() {
+          return loaded && JSON.stringify(manifest) !== savedJson;
+        }
+
         function loadManifest() {
-          return fetch('/api/manifest')
+          return fetch('/api/manifest' + storyQuery())
             .then(function (r) {
               return r.json();
             })
             .then(function (data) {
-              if (data && data.scenes) {
-                manifest = data;
+              var notes = [];
+              manifest = emptyManifest();
+              if (data && typeof data === 'object' && !data.error) {
+                Object.keys(data).forEach(function (k) {
+                  manifest[k] = data[k];
+                });
               }
-              manifest.splash = manifest.splash || {};
-              manifest.instruction = manifest.instruction || {};
+              ['splash', 'instruction', 'intro', 'audiotour', 'end'].forEach(function (k) {
+                if (!manifest[k] || typeof manifest[k] !== 'object') manifest[k] = {};
+              });
+              if (!Array.isArray(manifest.stops)) manifest.stops = [];
+              // Oud formaat (losse scenes): niet om te zetten, de betekenis is
+              // anders. Splash, instructie en reset blijven wel staan.
+              if (manifest.scenes) {
+                notes.push(
+                  manifest.scenes.length + ' scene(s) uit het oude formaat niet overgenomen — bouw de stops opnieuw op',
+                );
+                delete manifest.scenes;
+              }
               // Oudere packs hebben nog geen reset-code: meteen eentje
               // voorstellen, opslaan zonder kan niet.
               if (!manifest.resetScan) {
                 manifest.resetScan = randomBarcode(SPLASH);
-                setStatus(
-                  'nieuwe reset-barcode ' + manifest.resetScan + ' voorgesteld — nog niet opgeslagen',
-                );
+                notes.push('nieuwe reset-barcode ' + manifest.resetScan + ' voorgesteld');
               }
+              if (notes.length) setStatus(notes.join(', ') + ' — nog niet opgeslagen');
+              else setStatus('story "' + story + '" geladen');
+              loaded = true;
               activeIndex = SPLASH;
-              versionEl.value = manifest.version || '0.1.0';
+              versionEl.value = manifest.version || '0.3.0';
+              savedJson = notes.length ? null : JSON.stringify(manifest);
               renderAll();
+              syncPreview();
             })
             .catch(function (e) {
               setStatus('manifest laden mislukt: ' + e.message, true);
@@ -582,98 +797,124 @@
             });
         }
 
-        // ---- rendering: scene list ----
+        // ---- rendering: list ----
+
+        function select(index) {
+          if (index !== activeIndex) previewPart = 'hint';
+          activeIndex = index;
+          renderAll();
+          syncPreview();
+        }
+
+        function listItem(label, tag, index, opts) {
+          opts = opts || {};
+          var item = document.createElement('div');
+          item.className =
+            'scene-item' +
+            (opts.fixed ? ' fixed' : '') +
+            (opts.last ? ' last' : '') +
+            (activeIndex === index ? ' active' : '');
+          var name = document.createElement('span');
+          name.className = 'name';
+          name.textContent = label;
+          item.appendChild(name);
+          if (tag) {
+            var t = document.createElement('span');
+            t.className = 'tag' + (opts.warn ? ' warn' : '');
+            t.textContent = tag;
+            item.appendChild(t);
+          }
+          item.onclick = function () {
+            select(index);
+          };
+          sceneListEl.appendChild(item);
+          return item;
+        }
 
         function renderSceneList() {
           sceneListEl.innerHTML = '';
+          listItem('Splash', 'altijd eerst', SPLASH, {fixed: true});
+          listItem('Luisterinstructie', 'start + vóór audio', INSTRUCTION, {fixed: true});
+          listItem('Intro-audio', manifest.intro.src ? 'vóór stop 1' : 'geen', INTRO, {fixed: true});
+          listItem('Audiotour-scherm', 'alle audio', AUDIOTOUR, {fixed: true});
 
-          function fixedItem(index, label, tag) {
-            var item = document.createElement('div');
-            item.className =
-              'scene-item fixed' + (activeIndex === index ? ' active' : '');
-            var name = document.createElement('span');
-            name.className = 'name';
-            name.textContent = label;
-            item.appendChild(name);
-            var t = document.createElement('span');
-            t.className = 'tag';
-            t.textContent = tag;
-            item.appendChild(t);
-            item.onclick = function () {
-              activeIndex = index;
-              renderAll();
-              syncPreviewToActiveScene();
-            };
-            sceneListEl.appendChild(item);
-          }
-          fixedItem(SPLASH, 'Splash', 'altijd eerst');
-          fixedItem(INSTRUCTION, 'Luisterinstructie', 'na swipen');
-
-          manifest.scenes.forEach(function (scene, i) {
-            var item = document.createElement('div');
-            item.className =
-              'scene-item' + (i === activeIndex ? ' active' : '');
-
-            var name = document.createElement('span');
-            name.className = 'name';
-            name.textContent = scene.id || '(zonder id)';
-            item.appendChild(name);
+          manifest.stops.forEach(function (stop, i) {
+            var incomplete = isIncomplete(stop);
+            var tag = incomplete
+              ? 'onvolledig'
+              : SHORT[stop.hint.type] + ' → ' + SHORT[stop.reward.type];
+            var item = listItem(
+              i + 1 + '. ' + (stop.id || '(zonder naam)'),
+              tag,
+              i,
+              {warn: incomplete},
+            );
 
             var btns = document.createElement('span');
             btns.className = 'order-btns';
-
-            var up = document.createElement('button');
-            up.textContent = '↑';
-            up.title = 'naar boven';
-            up.onclick = function (e) {
-              e.stopPropagation();
-              moveScene(i, -1);
-            };
-            btns.appendChild(up);
-
-            var down = document.createElement('button');
-            down.textContent = '↓';
-            down.title = 'naar beneden';
-            down.onclick = function (e) {
-              e.stopPropagation();
-              moveScene(i, 1);
-            };
-            btns.appendChild(down);
-
+            [
+              ['↑', 'naar boven', -1],
+              ['↓', 'naar beneden', 1],
+            ].forEach(function (b) {
+              var btn = document.createElement('button');
+              btn.textContent = b[0];
+              btn.title = b[1];
+              btn.onclick = function (e) {
+                e.stopPropagation();
+                moveStop(i, b[2]);
+              };
+              btns.appendChild(btn);
+            });
             item.appendChild(btns);
-            item.onclick = function () {
-              activeIndex = i;
-              renderAll();
-              syncPreviewToActiveScene();
-            };
-            sceneListEl.appendChild(item);
           });
+
+          var add = document.createElement('button');
+          add.id = 'add-scene';
+          add.textContent = '+ stop toevoegen';
+          add.onclick = addStop;
+          sceneListEl.appendChild(add);
+
+          listItem('Eindscherm', 'na laatste stop', END, {fixed: true, last: true});
         }
 
-        function moveScene(i, dir) {
+        function moveStop(i, dir) {
           var j = i + dir;
-          if (j < 0 || j >= manifest.scenes.length) return;
-          var tmp = manifest.scenes[i];
-          manifest.scenes[i] = manifest.scenes[j];
-          manifest.scenes[j] = tmp;
+          if (j < 0 || j >= manifest.stops.length) return;
+          var tmp = manifest.stops[i];
+          manifest.stops[i] = manifest.stops[j];
+          manifest.stops[j] = tmp;
           if (activeIndex === i) activeIndex = j;
           else if (activeIndex === j) activeIndex = i;
           renderAll();
+          syncPreview();
         }
 
-        // ---- rendering: form ----
+        function addStop() {
+          var n = manifest.stops.length + 1;
+          var ids = {};
+          manifest.stops.forEach(function (s) {
+            ids[s.id] = true;
+          });
+          while (ids['stop' + n]) n++;
+          var stop = {id: 'stop' + n, scan: null, hint: {type: 'image'}, reward: {type: 'audio'}};
+          stop.scan = randomBarcode(stop);
+          manifest.stops.push(stop);
+          select(manifest.stops.length - 1);
+        }
+
+        // ---- rendering: form helpers ----
 
         // Real <select> instead of a text-input+datalist: always shows
         // exactly what's on disk right now (datalist suggestions were easy
         // to miss / inconsistent across browsers). Keeps the current value
         // as an extra option even if it's not in the list, so switching
-        // scenes never silently blanks an existing reference.
+        // stops never silently blanks an existing reference.
         function assetPicker(kind, currentValue, onChange) {
-          var select = document.createElement('select');
+          var sel = document.createElement('select');
           var blank = document.createElement('option');
           blank.value = '';
           blank.textContent = '— kies bestand —';
-          select.appendChild(blank);
+          sel.appendChild(blank);
 
           var list = assets[kind] || [];
           var seen = {};
@@ -682,19 +923,19 @@
             var opt = document.createElement('option');
             opt.value = v;
             opt.textContent = v;
-            select.appendChild(opt);
+            sel.appendChild(opt);
           });
           if (currentValue && !seen[currentValue]) {
             var missing = document.createElement('option');
             missing.value = currentValue;
             missing.textContent = currentValue + ' (niet gevonden op disk)';
-            select.appendChild(missing);
+            sel.appendChild(missing);
           }
-          select.value = currentValue || '';
-          select.onchange = function () {
-            onChange(select.value || undefined);
+          sel.value = currentValue || '';
+          sel.onchange = function () {
+            onChange(sel.value || undefined);
           };
-          return select;
+          return sel;
         }
 
         function uploadRow(kind, onUploaded) {
@@ -757,22 +998,60 @@
           label.textContent = labelText;
           wrap.appendChild(label);
           wrap.appendChild(input);
-          if (hint) {
-            var h = document.createElement('div');
-            h.className = 'hint';
-            h.textContent = hint;
-            wrap.appendChild(h);
-          }
+          if (hint) wrap.appendChild(hintEl(hint));
           return wrap;
         }
 
-        function afterAssetChange() {
-          loadAssets().then(renderForm);
+        function hintEl(text) {
+          var h = document.createElement('div');
+          h.className = 'hint';
+          h.textContent = text;
+          return h;
         }
 
-        // Tekst/kleur/afbeelding meteen in de preview, niet pas na opslaan.
-        function afterSplashChange() {
-          syncPreviewToActiveScene();
+        function heading(parent, title, intro) {
+          var h1 = document.createElement('h1');
+          h1.textContent = title;
+          parent.appendChild(h1);
+          if (intro) {
+            var p = document.createElement('div');
+            p.className = 'intro';
+            p.textContent = intro;
+            parent.appendChild(p);
+          }
+        }
+
+        function smallButton(text, title, onClick) {
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'small-btn';
+          btn.textContent = text;
+          btn.title = title;
+          btn.onclick = onClick;
+          return btn;
+        }
+
+        // Bestand kiezen of uploaden; na upload de bestandslijst verversen.
+        function fileField(parent, labelText, kind, obj, key, hint, onChange) {
+          parent.appendChild(
+            field(
+              labelText,
+              assetPicker(kind, obj[key], function (v) {
+                obj[key] = v;
+                onChange();
+              }),
+              hint,
+            ),
+          );
+          parent.appendChild(
+            uploadRow(kind, function (path) {
+              obj[key] = path;
+              loadAssets().then(function () {
+                renderAll();
+                onChange();
+              });
+            }),
+          );
         }
 
         function toHex6(color) {
@@ -781,139 +1060,115 @@
           return /^#[0-9a-f]{6}$/i.test(color || '') ? color : null;
         }
 
-        function renderSplashForm() {
-          var splash = manifest.splash;
+        // Kleurkiezer + hex-veld, blijven gelijk.
+        function colorField(parent, labelText, obj, key, onChange) {
+          var row = document.createElement('div');
+          row.className = 'row';
+          var pick = document.createElement('input');
+          pick.type = 'color';
+          var text = document.createElement('input');
+          text.placeholder = DEFAULT_COLOR;
+          text.value = obj[key] || '';
+          pick.value = toHex6(obj[key]) || DEFAULT_COLOR;
+          pick.oninput = function () {
+            text.value = pick.value;
+            obj[key] = pick.value;
+            onChange();
+          };
+          text.oninput = function () {
+            var v = text.value.trim();
+            obj[key] = v || undefined;
+            if (toHex6(v)) pick.value = toHex6(v);
+            if (!v || toHex6(v)) onChange();
+          };
+          row.appendChild(pick);
+          row.appendChild(text);
+          parent.appendChild(field(labelText, row, 'Leeg = geel (' + DEFAULT_COLOR + ').'));
+        }
 
-          var h1 = document.createElement('h1');
-          h1.textContent = 'Splash-scherm';
-          formEl.appendChild(h1);
-
-          var intro = document.createElement('div');
-          intro.className = 'intro';
-          intro.textContent =
-            'Staat altijd vóór de eerste scene. De bezoeker swipet het witte blok naar ' +
-            'rechts om te starten. De reset-barcode brengt een scanner vanuit elke scene ' +
-            'hier terug en wist alle voortgang.';
-          formEl.appendChild(intro);
-
-          // achtergrond
-          var imageSelect = assetPicker('image', splash.image, function (v) {
-            splash.image = v;
-            afterSplashChange();
-          });
-          formEl.appendChild(
-            field('achtergrond (afbeelding)', imageSelect, 'Vult het scherm boven de slider.'),
+        function textField(parent, labelText, obj, key, placeholder, multiline, onChange) {
+          var input = document.createElement(multiline ? 'textarea' : 'input');
+          input.value = obj[key] || '';
+          input.placeholder = placeholder;
+          if (!multiline) input.className = 'plain';
+          input.oninput = function () {
+            obj[key] = input.value || undefined;
+            onChange();
+          };
+          parent.appendChild(
+            field(
+              labelText,
+              input,
+              'Leeg = "' + placeholder + '".' + (multiline ? ' Enter = nieuwe regel.' : ''),
+            ),
           );
-          formEl.appendChild(
-            uploadRow('image', function (path) {
-              splash.image = path;
-              afterAssetChange();
-              afterSplashChange();
+        }
+
+        function barcodeField(parent, labelText, value, self, onChange, hint) {
+          var row = document.createElement('div');
+          row.className = 'row';
+          var input = document.createElement('input');
+          input.value = value || '';
+          input.placeholder = '8712345670012';
+          input.oninput = function () {
+            onChange(input.value.trim() || null);
+          };
+          row.appendChild(input);
+          row.appendChild(
+            smallButton('genereer', 'willekeurige unieke barcode invullen', function () {
+              input.value = randomBarcode(self);
+              onChange(input.value);
             }),
           );
+          parent.appendChild(field(labelText, row, hint));
+        }
 
-          // slider-kleur: kleurkiezer + hex-veld, blijven gelijk
-          var colorRow = document.createElement('div');
-          colorRow.style.cssText = 'display:flex;gap:6px;';
-          var colorPick = document.createElement('input');
-          colorPick.type = 'color';
-          var colorText = document.createElement('input');
-          colorText.placeholder = '#ffff5c';
-          colorText.style.flex = '1';
-          colorText.value = splash.sliderColor || '';
-          colorPick.value = toHex6(splash.sliderColor) || '#ffff5c';
-          colorPick.oninput = function () {
-            colorText.value = colorPick.value;
-            splash.sliderColor = colorPick.value;
-            afterSplashChange();
-          };
-          colorText.oninput = function () {
-            var v = colorText.value.trim();
-            splash.sliderColor = v || undefined;
-            if (toHex6(v)) colorPick.value = toHex6(v);
-            if (!v || toHex6(v)) afterSplashChange();
-          };
-          colorRow.appendChild(colorPick);
-          colorRow.appendChild(colorText);
-          formEl.appendChild(
-            field('slider-kleur', colorRow, 'Leeg = geel (#ffff5c).'),
+        // ---- rendering: forms ----
+
+        function renderSplashForm() {
+          var splash = manifest.splash;
+          heading(
+            formEl,
+            'Splash-scherm',
+            'Staat altijd vóór de eerste stop. De bezoeker swipet het witte blok naar ' +
+              'rechts om te starten. De reset-barcode en terugzetten in de cradle brengen ' +
+              'een scanner vanaf elk moment hier terug en wissen alle voortgang.',
           );
-
-          // slider-tekst
-          var textInput = document.createElement('input');
-          textInput.value = splash.sliderText || '';
-          textInput.placeholder = 'Swipe to start';
-          textInput.style.fontFamily = 'sans-serif';
-          textInput.style.color = '#eee';
-          textInput.oninput = function () {
-            splash.sliderText = textInput.value || undefined;
-            afterSplashChange();
-          };
-          formEl.appendChild(field('slider-tekst', textInput, 'Leeg = "Swipe to start".'));
-
-          // reset-barcode
-          var resetRow = document.createElement('div');
-          resetRow.style.cssText = 'display:flex;gap:6px;';
-          var resetInput = document.createElement('input');
-          resetInput.value = manifest.resetScan || '';
-          resetInput.placeholder = '8712345679999';
-          resetInput.style.flex = '1';
-          resetInput.oninput = function () {
-            manifest.resetScan = resetInput.value.trim() || null;
-            afterSplashChange();
-          };
-          var genBtn = document.createElement('button');
-          genBtn.type = 'button';
-          genBtn.textContent = 'genereer';
-          genBtn.title = 'willekeurige unieke barcode invullen';
-          genBtn.style.cssText =
-            'padding:0 12px;font-size:11px;background:#444;color:#eee;border:0;border-radius:3px;cursor:pointer;white-space:nowrap;';
-          genBtn.onclick = function () {
-            manifest.resetScan = randomBarcode(SPLASH);
-            resetInput.value = manifest.resetScan;
-            afterSplashChange();
-          };
-          resetRow.appendChild(resetInput);
-          resetRow.appendChild(genBtn);
-          formEl.appendChild(
-            field(
-              'reset-barcode (verplicht)',
-              resetRow,
-              'Werkt in elke scene: terug naar dit scherm, alle voortgang weg. ' +
-                'Printbaar via "Barcodes (PDF)". Mag niet gelijk zijn aan een scene-scan.',
-            ),
+          fileField(
+            formEl,
+            'achtergrond (afbeelding)',
+            'image',
+            splash,
+            'image',
+            'Vult het scherm boven de slider.',
+            syncPreview,
+          );
+          colorField(formEl, 'slider-kleur', splash, 'sliderColor', syncPreview);
+          textField(formEl, 'slider-tekst', splash, 'sliderText', 'Swipe to start', false, syncPreview);
+          barcodeField(
+            formEl,
+            'reset-barcode (verplicht)',
+            manifest.resetScan,
+            SPLASH,
+            function (v) {
+              manifest.resetScan = v;
+              pushManifest();
+            },
+            'Werkt altijd: terug naar dit scherm, alle voortgang weg. ' +
+              'Printbaar via "Barcodes (PDF)". Mag niet gelijk zijn aan een product-barcode.',
           );
         }
 
         function renderInstructionForm() {
           var instr = manifest.instruction;
-
-          var h1 = document.createElement('h1');
-          h1.textContent = 'Luisterinstructie';
-          formEl.appendChild(h1);
-
-          var intro = document.createElement('div');
-          intro.className = 'intro';
-          intro.textContent =
-            'Verschijnt direct na het swipen als donkere laag met tekst over het beeld. ' +
-            'Daaronder staat al de eerste scene; de narratie daarvan start pas als de ' +
-            'laag weg is. Timing testen: klik Splash en swipe in de preview.';
-          formEl.appendChild(intro);
-
-          var textInput = document.createElement('textarea');
-          textInput.value = instr.text || '';
-          textInput.placeholder = DEFAULT_INSTRUCTION_TEXT;
-          textInput.oninput = function () {
-            instr.text = textInput.value || undefined;
-            syncPreviewToActiveScene();
-          };
-          formEl.appendChild(
-            field(
-              'tekst',
-              textInput,
-              'Leeg = "' + DEFAULT_INSTRUCTION_TEXT + '". Enter = nieuwe regel.',
-            ),
+          heading(
+            formEl,
+            'Luisterinstructie',
+            'Donkere laag met tekst over het beeld. Verschijnt direct na het swipen ' +
+              '(daaronder komt de eerste hint), en opnieuw na elke juiste scan vóór een ' +
+              'audiotour. Timing testen: klik Splash en swipe in de preview.',
           );
+          textField(formEl, 'tekst', instr, 'text', DEFAULT_INSTRUCTION_TEXT, true, syncPreview);
 
           var secInput = document.createElement('input');
           secInput.type = 'number';
@@ -921,220 +1176,219 @@
           secInput.max = '60';
           secInput.step = '0.5';
           secInput.placeholder = String(DEFAULT_INSTRUCTION_SECONDS);
-          secInput.value =
-            typeof instr.seconds === 'number' ? String(instr.seconds) : '';
+          secInput.value = typeof instr.seconds === 'number' ? String(instr.seconds) : '';
           secInput.oninput = function () {
             var v = secInput.value.trim();
             instr.seconds = v === '' ? undefined : Number(v);
+            pushManifest();
           };
           formEl.appendChild(
             field(
               'duur (seconden)',
               secInput,
               'Hoe lang de melding helemaal in beeld staat, plus een korte fade in en uit. ' +
-                'Leeg = ' + DEFAULT_INSTRUCTION_SECONDS + '. 0 = geen instructie, meteen de eerste scene.',
+                'Leeg = ' + DEFAULT_INSTRUCTION_SECONDS + '. 0 = nooit, meteen door.',
             ),
           );
         }
 
-        function renderForm() {
-          formEl.innerHTML = '';
-          if (activeIndex === SPLASH) {
-            renderSplashForm();
-            return;
-          }
-          if (activeIndex === INSTRUCTION) {
-            renderInstructionForm();
-            return;
-          }
-          var scene = manifest.scenes[activeIndex];
-          if (!scene) {
-            formEl.innerHTML =
-              '<div id="empty-state">geen scene geselecteerd</div>';
-            return;
-          }
+        function renderIntroForm() {
+          heading(
+            formEl,
+            'Intro-audio',
+            'Audiofragment na de splash, vóór de speurtocht. Eerst de luisterinstructie, ' +
+              'dan speelt de intro op het audiotour-scherm. Klaar = hint van stop 1. ' +
+              'Scans doen niets tot hij klaar is (reset wel). Timing testen: klik Splash ' +
+              'en swipe in de preview.',
+          );
+          fileField(
+            formEl,
+            'bestand (audio)',
+            'audio',
+            manifest.intro,
+            'src',
+            'Leeg = geen intro, na de luisterinstructie meteen de hint van stop 1.',
+            function () {
+              renderSceneList();
+              syncPreview();
+            },
+          );
+          var play = smallButton('speel', 'speel de intro in de preview', syncPreview);
+          formEl.appendChild(play);
+        }
 
-          var h1 = document.createElement('h1');
-          h1.textContent = 'Scene';
-          formEl.appendChild(h1);
+        function renderAudiotourForm() {
+          heading(
+            formEl,
+            'Audiotour-scherm',
+            'Achtergrond van elke audiotour-beloning, met 10 sec terug, pauze/play en ' +
+              'volume erover. Geel vlak = voortgang. De preview toont het scherm zonder audio; ' +
+              'een echte audiotour speel je bij een stop.',
+          );
+          fileField(
+            formEl,
+            'achtergrond (afbeelding)',
+            'image',
+            manifest.audiotour,
+            'image',
+            'Eén voor alle audiotours. Visual komt van de vormgever. Leeg = groen.',
+            syncPreview,
+          );
+        }
 
-          // id
-          var idInput = document.createElement('input');
-          idInput.value = scene.id || '';
-          idInput.oninput = function () {
-            scene.id = idInput.value;
-            renderSceneList();
-          };
-          formEl.appendChild(field('id', idInput));
+        function renderEndForm() {
+          var end = manifest.end;
+          heading(
+            formEl,
+            'Eindscherm',
+            'Na de beloning van de laatste stop. Blijft staan tot de reset-barcode ' +
+              'gescand wordt of de scanner terug in de cradle gaat.',
+          );
+          fileField(
+            formEl,
+            'afbeelding',
+            'image',
+            end,
+            'image',
+            'Vult het scherm boven de balk. Leeg = groen met "the end".',
+            syncPreview,
+          );
+          colorField(formEl, 'balk-kleur', end, 'barColor', syncPreview);
+          textField(formEl, 'balk-tekst', end, 'barText', DEFAULT_END_TEXT, true, syncPreview);
+        }
 
-          // type: video XOR (image + audio) XOR (puzzle + audio) -- nooit
-          // gecombineerd, zie runtime.js
-          var mode = sceneMode.has(scene)
-            ? sceneMode.get(scene)
-            : scene.video
-              ? 'video'
-              : scene.puzzle
-                ? 'puzzle'
-                : 'image';
+        // Hint of beloning: type kiezen, dan het bestand.
+        function renderPart(stop, key, title, types, help, playLabel) {
+          var part = stop[key];
+          var box = document.createElement('div');
+          box.className = 'part' + (previewPart === key ? ' previewing' : '');
 
-          function modeRadio(value, labelText) {
+          var head = document.createElement('div');
+          head.className = 'part-head';
+          var h2 = document.createElement('h2');
+          h2.textContent = title;
+          head.appendChild(h2);
+          head.appendChild(
+            smallButton(playLabel, 'laat dit zien in de preview', function () {
+              previewPart = key;
+              renderForm();
+              syncPreview();
+            }),
+          );
+          box.appendChild(head);
+
+          var radios = document.createElement('div');
+          radios.className = 'radio-row';
+          types.forEach(function (t) {
             var lbl = document.createElement('label');
-            lbl.style.cssText =
-              'display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#ccc;margin:0 16px 0 0;text-transform:none;letter-spacing:normal;';
             var r = document.createElement('input');
             r.type = 'radio';
-            r.name = 'scene-mode';
-            r.value = value;
-            r.style.cssText = 'width:auto;margin:0;';
-            r.checked = mode === value;
+            r.name = key + '-type';
+            r.checked = part.type === t[0];
             r.onchange = function () {
-              sceneMode.set(scene, value);
-              if (value === 'video') {
-                scene.image = undefined;
-                scene.puzzle = undefined;
-                scene.audio = undefined;
-              } else if (value === 'puzzle') {
-                scene.video = undefined;
-                scene.image = undefined;
-              } else {
-                scene.video = undefined;
-                scene.puzzle = undefined;
-              }
-              renderForm();
+              // afbeelding <-> puzzel houdt het bestand, verder past het niet
+              if (KIND[part.type] !== KIND[t[0]]) part.src = undefined;
+              part.type = t[0];
+              renderAll();
+              if (previewPart === key) syncPreview();
             };
             lbl.appendChild(r);
-            lbl.appendChild(document.createTextNode(labelText));
-            return lbl;
-          }
+            lbl.appendChild(document.createTextNode(t[1]));
+            radios.appendChild(lbl);
+          });
+          box.appendChild(field('type', radios));
 
-          var modeWrap = document.createElement('div');
-          modeWrap.style.cssText = 'display:flex;margin-top:2px;';
-          modeWrap.appendChild(modeRadio('video', 'Video'));
-          modeWrap.appendChild(modeRadio('image', 'Afbeelding + audio'));
-          modeWrap.appendChild(modeRadio('puzzle', 'Puzzel + audio'));
-          formEl.appendChild(field('type', modeWrap));
+          fileField(box, 'bestand', KIND[part.type], part, 'src', help[part.type], function () {
+            renderSceneList();
+            if (previewPart === key) syncPreview();
+          });
+          formEl.appendChild(box);
+        }
 
-          if (mode === 'video') {
-            var videoSelect = assetPicker('video', scene.video, function (v) {
-              scene.video = v;
-            });
-            formEl.appendChild(field('video', videoSelect));
-            formEl.appendChild(
-              uploadRow('video', function (path) {
-                scene.video = path;
-                afterAssetChange();
-              }),
-            );
-          } else {
-            if (mode === 'puzzle') {
-              var puzzleSelect = assetPicker('image', scene.puzzle, function (v) {
-                scene.puzzle = v;
-              });
-              formEl.appendChild(field('puzzel-afbeelding', puzzleSelect));
-              formEl.appendChild(
-                uploadRow('image', function (path) {
-                  scene.puzzle = path;
-                  afterAssetChange();
-                }),
-              );
-              var puzzleHint = document.createElement('div');
-              puzzleHint.style.cssText =
-                'font-size:11px;color:#888;text-transform:none;letter-spacing:normal;line-height:1.4;margin:-2px 0 4px;';
-              puzzleHint.textContent =
-                '3x3 puzzel van deze foto. Stukjes komen in willekeurige volgorde uit de balk ' +
-                'onderin en klikken alleen op hun eigen plek vast. De bezoeker kan altijd ' +
-                'doorscannen zonder hem af te maken.';
-              formEl.appendChild(puzzleHint);
-            } else {
-              var imageSelect = assetPicker('image', scene.image, function (v) {
-                scene.image = v;
-              });
-              formEl.appendChild(field('afbeelding', imageSelect));
-              formEl.appendChild(
-                uploadRow('image', function (path) {
-                  scene.image = path;
-                  afterAssetChange();
-                }),
-              );
-            }
+        function renderStopForm(stop) {
+          heading(
+            formEl,
+            'Stop ' + (activeIndex + 1) + ' van ' + manifest.stops.length,
+            'Hint in beeld → bezoeker scant dit product → beloning. Daarna de hint van ' +
+              'de volgende stop, na de laatste het eindscherm.',
+          );
+          if (!stop.hint || typeof stop.hint !== 'object') stop.hint = {type: 'image'};
+          if (!stop.reward || typeof stop.reward !== 'object') stop.reward = {type: 'audio'};
 
-            var audioSelect = assetPicker('audio', scene.audio, function (v) {
-              scene.audio = v;
-            });
-            formEl.appendChild(field('audio (narratie)', audioSelect));
-            formEl.appendChild(
-              uploadRow('audio', function (path) {
-                scene.audio = path;
-                afterAssetChange();
-              }),
-            );
-          }
-
-          // text
-          var textInput = document.createElement('textarea');
-          textInput.value = scene.text || '';
-          textInput.oninput = function () {
-            scene.text = textInput.value || undefined;
+          var idInput = document.createElement('input');
+          idInput.value = stop.id || '';
+          idInput.oninput = function () {
+            stop.id = idInput.value;
+            renderSceneList();
+            pushManifest();
           };
-          formEl.appendChild(field('tekst (ondertitel)', textInput));
+          formEl.appendChild(field('naam', idInput, 'Bv. het product. Staat op de barcode-kaart.'));
 
-          // expectScan
-          var scanRow = document.createElement('div');
-          scanRow.style.cssText = 'display:flex;gap:6px;';
-          var scanInput = document.createElement('input');
-          scanInput.value = scene.expectScan || '';
-          scanInput.placeholder = '8712345670012';
-          scanInput.style.flex = '1';
-          scanInput.oninput = function () {
-            scene.expectScan = scanInput.value || null;
-          };
-          var genBtn = document.createElement('button');
-          genBtn.type = 'button';
-          genBtn.textContent = 'genereer';
-          genBtn.title = 'willekeurige unieke barcode invullen';
-          genBtn.style.cssText =
-            'padding:0 12px;font-size:11px;background:#444;color:#eee;border:0;border-radius:3px;cursor:pointer;white-space:nowrap;';
-          genBtn.onclick = function () {
-            var code = randomBarcode(scene);
-            scanInput.value = code;
-            scene.expectScan = code;
-          };
-          scanRow.appendChild(scanInput);
-          scanRow.appendChild(genBtn);
-          formEl.appendChild(
-            field('verwachte scan (8-14 cijfers, leeg = eindscene)', scanRow),
+          barcodeField(
+            formEl,
+            'product-barcode',
+            stop.scan,
+            stop,
+            function (v) {
+              stop.scan = v;
+              renderSceneList();
+              pushManifest();
+            },
+            'Alleen deze code gaat door naar de beloning, andere geven "verkeerd product". ' +
+              '8-14 cijfers, uniek per stop.',
           );
 
-          // next
-          var nextSelect = document.createElement('select');
-          var blankOpt = document.createElement('option');
-          blankOpt.value = '';
-          blankOpt.textContent = '(volgende in lijst)';
-          nextSelect.appendChild(blankOpt);
-          manifest.scenes.forEach(function (s) {
-            if (s === scene) return;
-            var opt = document.createElement('option');
-            opt.value = s.id;
-            opt.textContent = s.id;
-            if (scene.next === s.id) opt.selected = true;
-            nextSelect.appendChild(opt);
-          });
-          nextSelect.onchange = function () {
-            scene.next = nextSelect.value || undefined;
-          };
-          formEl.appendChild(
-            field('volgende scene bij juiste scan', nextSelect),
+          renderPart(
+            stop,
+            'hint',
+            'Hint',
+            HINT_TYPES,
+            {
+              image: 'Staat stil in beeld tot de juiste scan.',
+              puzzle:
+                '3x3 puzzel van deze foto. Stukjes komen in willekeurige volgorde uit de balk ' +
+                'onderin en klikken alleen op hun eigen plek vast. Doorscannen kan altijd.',
+              video: 'Speelt zonder geluid, in een lus, tot de juiste scan.',
+            },
+            'toon',
+          );
+          renderPart(
+            stop,
+            'reward',
+            'Beloning',
+            REWARD_TYPES,
+            {
+              audio:
+                'Eerst de luisterinstructie, dan het audiotour-scherm. Klaar = volgende stop. ' +
+                'Scans doen niets tot hij klaar is (reset wel).',
+              video: 'Speelt met geluid, één keer. Klaar = volgende stop.',
+            },
+            'speel',
           );
 
           var del = document.createElement('button');
           del.id = 'delete-scene';
-          del.textContent = 'Scene verwijderen';
+          del.textContent = 'Stop verwijderen';
           del.onclick = function () {
-            manifest.scenes.splice(activeIndex, 1);
-            activeIndex = Math.min(activeIndex, manifest.scenes.length - 1);
-            renderAll();
+            manifest.stops.splice(activeIndex, 1);
+            select(manifest.stops.length ? Math.min(activeIndex, manifest.stops.length - 1) : END);
           };
           formEl.appendChild(del);
+        }
+
+        function renderForm() {
+          formEl.innerHTML = '';
+          if (activeIndex === SPLASH) return renderSplashForm();
+          if (activeIndex === INSTRUCTION) return renderInstructionForm();
+          if (activeIndex === INTRO) return renderIntroForm();
+          if (activeIndex === AUDIOTOUR) return renderAudiotourForm();
+          if (activeIndex === END) return renderEndForm();
+          var stop = manifest.stops[activeIndex];
+          if (!stop) {
+            formEl.innerHTML = '<div id="empty-state">niets geselecteerd</div>';
+            return;
+          }
+          renderStopForm(stop);
         }
 
         function renderAll() {
@@ -1142,28 +1396,8 @@
           renderForm();
         }
 
-        // ---- add scene ----
-
-        document.getElementById('add-scene').onclick = function () {
-          var n = manifest.scenes.length + 1;
-          var id = 'scene' + n;
-          while (
-            manifest.scenes.some(function (s) {
-              return s.id === id;
-            })
-          ) {
-            n++;
-            id = 'scene' + n;
-          }
-          var newScene = {id: id, expectScan: null};
-          sceneMode.set(newScene, 'video');
-          manifest.scenes.push(newScene);
-          activeIndex = manifest.scenes.length - 1;
-          renderAll();
-        };
-
         document.getElementById('barcodes').onclick = function () {
-          window.open('barcodes.html', '_blank');
+          window.open('barcodes.html' + storyQuery(), '_blank');
         };
         document.getElementById('library').onclick = function () {
           window.open('library.html', '_blank');
@@ -1172,10 +1406,10 @@
         // ---- save ----
 
         document.getElementById('save').onclick = function () {
-          manifest.version = versionEl.value || '0.1.0';
+          manifest.version = versionEl.value || '0.3.0';
           errorsEl.classList.remove('show');
           setStatus('opslaan…');
-          fetch('/api/manifest', {
+          fetch('/api/manifest' + storyQuery(), {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(manifest),
@@ -1187,16 +1421,13 @@
             })
             .then(function (res) {
               if (res.data.ok) {
-                setStatus(
-                  'opgeslagen ✓ (' + new Date().toLocaleTimeString() + ')',
-                );
+                setStatus('"' + story + '" opgeslagen ✓ (' + new Date().toLocaleTimeString() + ')');
+                savedJson = JSON.stringify(manifest);
                 reloadFrame();
+                // een nieuwe story bestaat pas na de eerste keer opslaan
+                if (stories.indexOf(story) === -1) loadStories();
               } else {
-                setStatus(
-                  (res.data.errors || []).length +
-                    ' fout(en) — niet opgeslagen',
-                  true,
-                );
+                setStatus((res.data.errors || []).length + ' fout(en) — niet opgeslagen', true);
                 errorsEl.textContent = (res.data.errors || []).join('\n');
                 errorsEl.classList.add('show');
               }
@@ -1208,22 +1439,45 @@
 
         // ---- preview scan simulator ----
 
+        function packWindow(fn) {
+          var win = frame.contentWindow;
+          if (!win || typeof win[fn] !== 'function') {
+            log('preview nog niet geladen (of ' + fn + ' ontbreekt)');
+            return null;
+          }
+          return win;
+        }
+
         document.getElementById('scan').onclick = function () {
           var code = document.getElementById('code').value.trim();
           if (!code) return;
-          var win = frame.contentWindow;
-          if (!win || typeof win.onNativeScan !== 'function') {
-            log('preview nog niet geladen (of onNativeScan ontbreekt)');
-            return;
-          }
+          var win = packWindow('onNativeScan');
+          if (!win) return;
           win.onNativeScan(code);
           log('scan verstuurd: ' + code);
         };
-        document
-          .getElementById('code')
-          .addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') document.getElementById('scan').click();
-          });
+        document.getElementById('code').addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') document.getElementById('scan').click();
+        });
+        // Zoals App.tsx: in de cradle = terug naar splash, en de swipe vraagt
+        // dan om de cradle te openen (zie pack/runtime.js). Zonder App.tsx
+        // opent er niets; na 15 s zonder "uit cradle" gaat de preview terug
+        // naar splash, net als op het device.
+        var inCradle = false;
+        var dockBtn = document.getElementById('dock');
+
+        function sendDock() {
+          var win = packWindow('onNativeDock');
+          if (win) win.onNativeDock(inCradle);
+        }
+
+        dockBtn.onclick = function () {
+          inCradle = !inCradle;
+          dockBtn.textContent = inCradle ? 'Uit cradle' : 'In cradle';
+          dockBtn.className = inCradle ? 'on' : '';
+          sendDock();
+          log(inCradle ? 'scanner in cradle gezet' : 'scanner uit cradle gehaald');
+        };
         document.getElementById('reload').onclick = function () {
           reloadFrame();
           log('preview herladen');
@@ -1290,8 +1544,129 @@
             });
         };
 
+        // ---- stories + welke story op welk device ----
+
+        var storySelectEl = document.getElementById('story-select');
+        var deviceStoriesEl = document.getElementById('device-stories');
+
+        function renderStorySelect() {
+          storySelectEl.innerHTML = '';
+          var names = stories.slice();
+          if (names.indexOf(story) === -1) names.push(story); // nieuw, nog niet opgeslagen
+          names.forEach(function (n) {
+            var opt = document.createElement('option');
+            opt.value = n;
+            opt.textContent = n + (stories.indexOf(n) === -1 ? ' (nieuw)' : '');
+            storySelectEl.appendChild(opt);
+          });
+          storySelectEl.value = story;
+        }
+
+        function renderDeviceStories() {
+          deviceStoriesEl.innerHTML = '';
+          if (!devices.length) return;
+          var title = document.createElement('span');
+          title.textContent = 'story per device:';
+          deviceStoriesEl.appendChild(title);
+          devices.forEach(function (d) {
+            var label = document.createElement('label');
+            label.title = d.ip;
+            label.appendChild(document.createTextNode(d.name));
+            var sel = document.createElement('select');
+            stories.forEach(function (n) {
+              var opt = document.createElement('option');
+              opt.value = n;
+              opt.textContent = n;
+              sel.appendChild(opt);
+            });
+            sel.value = d.story;
+            if (d.story !== DEFAULT_STORY) sel.className = 'other';
+            sel.onchange = function () {
+              sel.disabled = true;
+              fetch('/api/device-story', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({device: d.name, story: sel.value}),
+              })
+                .then(function (r) {
+                  return r.json();
+                })
+                .then(function (data) {
+                  if (!data.ok) throw new Error(data.error || 'onbekende fout');
+                  devices = data.devices;
+                  setStatus(d.name + ' krijgt "' + sel.value + '" bij de volgende push');
+                  renderDeviceStories();
+                })
+                .catch(function (e) {
+                  setStatus('story toewijzen mislukt: ' + e.message, true);
+                  sel.value = d.story;
+                  sel.disabled = false;
+                });
+            };
+            label.appendChild(sel);
+            deviceStoriesEl.appendChild(label);
+          });
+        }
+
+        function loadStories() {
+          return fetch('/api/stories')
+            .then(function (r) {
+              return r.json();
+            })
+            .then(function (data) {
+              stories = data.stories || [DEFAULT_STORY];
+              devices = data.devices || [];
+              renderStorySelect();
+              renderDeviceStories();
+            })
+            .catch(function (e) {
+              setStatus('stories ophalen mislukt: ' + e.message, true);
+            });
+        }
+
+        function confirmDiscard() {
+          return !isDirty() || window.confirm('"' + story + '" heeft niet-opgeslagen wijzigingen. Weggooien?');
+        }
+
+        storySelectEl.onchange = function () {
+          if (!confirmDiscard()) {
+            storySelectEl.value = story;
+            return;
+          }
+          story = storySelectEl.value;
+          renderStorySelect(); // haalt een niet-opgeslagen nieuwe story weg
+          loadManifest();
+        };
+
+        // Nieuwe story = kopie van wat je nu open hebt; bestaat pas na Opslaan.
+        document.getElementById('new-story').onclick = function () {
+          var name = window.prompt('Naam van de nieuwe story (a-z, 0-9, - en _):', '');
+          if (name === null) return;
+          name = name.trim().toLowerCase().replace(/\s+/g, '-');
+          if (!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(name)) {
+            setStatus('ongeldige naam "' + name + '" — alleen a-z, 0-9, - en _', true);
+            return;
+          }
+          if (stories.indexOf(name) !== -1) {
+            setStatus('story "' + name + '" bestaat al', true);
+            return;
+          }
+          story = name;
+          savedJson = null;
+          renderStorySelect();
+          setStatus('nieuwe story "' + name + '" (kopie) — nog niet opgeslagen');
+        };
+
+        window.addEventListener('beforeunload', function (e) {
+          if (isDirty()) {
+            e.preventDefault();
+            e.returnValue = '';
+          }
+        });
+
         refreshDevices();
-        Promise.all([loadManifest(), loadAssets()]);
+        loadStories();
+        loadAssets().then(loadManifest);
       })();
     </script>
   </body>

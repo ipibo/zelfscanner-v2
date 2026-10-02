@@ -7,19 +7,13 @@
   video, img#photo { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
   img#photo { display: none; }
   /* top/left/right/bottom i.p.v. inset: inset bestaat pas sinds Chromium 87.
-     z-index boven puzzel (2) en overlay (40), anders zie je de melding daar niet. */
+     z-index boven puzzel (2), audiotour (20), eindscherm (30) en overlay (40),
+     anders zie je de melding daar niet. */
   #error {
     position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 50; display: none; align-items: center; justify-content: center;
     background: rgba(200, 0, 0, 0.85); color: #fff; font: bold 8vw sans-serif; text-align: center;
   }
   #error.show { display: flex; }
-  #caption {
-    position: absolute; left: 0; right: 0; bottom: 0; display: none; align-items: center; justify-content: center;
-    padding: 6vw 6vw calc(6vw + 24px); box-sizing: border-box;
-    background: linear-gradient(to top, rgba(0,0,0,0.75), rgba(0,0,0,0));
-    color: #fff; font: 5.5vw sans-serif; text-align: center;
-  }
-  #caption.show { display: flex; }
   #debug {
     position: absolute; bottom: 8px; left: 8px; color: #7CFC00; font: 12px monospace; opacity: 0.85;
   }
@@ -28,9 +22,7 @@
 <body>
   <video id="player" autoplay loop muted playsinline></video>
   <img id="photo" alt="">
-  <audio id="narrator"></audio>
   <div id="error"></div>
-  <div id="caption"></div>
   <div id="debug">loading pack…</div>
   <script>
     // <script src="runtime.js"> does NOT load on this WebView (Android 5.1 /
@@ -60,11 +52,10 @@
       }
 
       try {
-        // modules eerst: runtime.js roept ZSSplash aan zodra het manifest
-        // binnen is, ZSOverlay na het swipen en ZSPuzzle bij een puzzel-scene.
-        if (loadLocal('puzzle.js') && loadLocal('splash.js') && loadLocal('overlay.js')) {
-          loadLocal('runtime.js');
-        }
+        // modules eerst, runtime.js als laatste: die gebruikt ze allemaal
+        // (ZSPuzzle, ZSSplash, ZSOverlay, ZSAudiotour, ZSEnd).
+        var files = ['puzzle.js', 'splash.js', 'overlay.js', 'audiotour.js', 'end.js', 'runtime.js'];
+        for (var i = 0; i < files.length && loadLocal(files[i]); i++) {}
       } catch (e) {
         debugEl.textContent = 'pack laden MISLUKT: ' + e.message;
       }
