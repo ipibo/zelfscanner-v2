@@ -1,0 +1,138 @@
+{
+  "version": "0.4.0",
+  "resetScan": "8712345679999",
+  "splash": {
+    "image": "assets/images/speurtocht/splashscreen.png",
+    "startScan": "123456789",
+    "fullImage": true
+  },
+  "instruction": {
+    "seconds": 0
+  },
+  "intro": {},
+  "audiotour": {},
+  "wrongScan": {
+    "text": "No, that's not the product we're looking for!\nIf you need a hint, use the button below.",
+    "buttonText": "I need a hint"
+  },
+  "stops": [
+    {
+      "id": "Wasmiddel kokos",
+      "scan": "8720181098963",
+      "hint": {
+        "type": "narrator",
+        "text": "The premium brand product we’re looking for will make your shirts smell like pina colada.",
+        "src": "assets/images/speurtocht/figuurtjes-02.png",
+        "background": "assets/images/speurtocht/background-01.png",
+        "animation": "slide"
+      },
+      "reward": {
+        "type": "video",
+        "src": "assets/speurtocht/80s.mp4"
+      },
+      "help": {
+        "image": "assets/images/speurtocht/Wasmiddel.jpg",
+        "text": "We're looking for this detergent."
+      }
+    },
+    {
+      "id": "Opzetborstels total clean",
+      "scan": "8718907460323",
+      "hint": {
+        "type": "narrator",
+        "text": "The store brand product we're looking for is a set of rotating heads to “total clean” a part of yours.",
+        "src": "assets/images/speurtocht/figuurtjes-02.png",
+        "background": "assets/images/speurtocht/background-01.png",
+        "animation": "slide"
+      },
+      "reward": {
+        "type": "video",
+        "src": "assets/speurtocht/elektromotor.mp4"
+      },
+      "help": {
+        "image": "assets/images/speurtocht/Opzetborstels.jpg",
+        "text": "We’re looking for this product, found in the dental health section."
+      }
+    },
+    {
+      "id": "Perla Mild",
+      "scan": "8711000003411",
+      "hint": {
+        "type": "narrator",
+        "text": "The vacuum packaged product we're looking for was introduced with different colours for different taste profiles. We're looking for the green one that is “mild and soft”.",
+        "src": "assets/images/speurtocht/figuurtjes-02.png",
+        "background": "assets/images/speurtocht/background-01.png",
+        "animation": "slide"
+      },
+      "reward": {
+        "type": "video",
+        "src": "assets/speurtocht/90s.mp4"
+      },
+      "help": {
+        "image": "assets/images/speurtocht/douweegberts.jpg",
+        "text": "We're looking for this product, found in the coffee section. It's 250g for €5,99."
+      }
+    },
+    {
+      "id": "Koriander",
+      "scan": "8710400186601",
+      "hint": {
+        "type": "narrator",
+        "text": "The product we’re looking for is a 15g of a herb tastes like soap for some people.",
+        "src": "assets/images/speurtocht/figuurtjes-02.png",
+        "background": "assets/images/speurtocht/background-01.png",
+        "animation": "slide"
+      },
+      "reward": {
+        "type": "video",
+        "src": "assets/speurtocht/PMC1.mp4"
+      },
+      "help": {
+        "image": "assets/images/speurtocht/Koriander.jpg",
+        "text": "We're looking for this product, in the refrigerated herbs section."
+      }
+    },
+    {
+      "id": "Danerolles",
+      "scan": "8713788118363",
+      "hint": {
+        "type": "narrator",
+        "text": "We’re looking for a premium brand convenience product of 240g, that pops out of its seams when you open it, to bake a France pastry with.",
+        "src": "assets/images/speurtocht/figuurtjes-02.png",
+        "background": "assets/images/speurtocht/background-01.png",
+        "animation": "slide"
+      },
+      "reward": {
+        "type": "video",
+        "src": "assets/speurtocht/PMC2.mp4"
+      },
+      "help": {
+        "image": "assets/images/speurtocht/Danerolles.jpg",
+        "text": "We're looking for this pre-made croissant dough."
+      }
+    },
+    {
+      "id": "Bapao",
+      "scan": "8718907855280",
+      "hint": {
+        "type": "narrator",
+        "text": "To unlock the next video, scan a vegetable filled bun that you steam in the microwave.",
+        "src": "assets/images/speurtocht/figuurtjes-02.png",
+        "background": "assets/images/speurtocht/background-01.png",
+        "animation": "slide"
+      },
+      "reward": {
+        "type": "video",
+        "src": "assets/speurtocht/PMC3.mp4"
+      },
+      "help": {
+        "image": "assets/images/speurtocht/Bapao.jpg",
+        "text": "This is the product we’re looking for."
+      }
+    }
+  ],
+  "end": {
+    "image": "assets/images/speurtocht/eindscherm-01.png",
+    "fullImage": true
+  }
+}

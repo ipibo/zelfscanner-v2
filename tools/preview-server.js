@@ -85,6 +85,7 @@ function setDeviceStory(deviceName, story) {
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
+  '.htm': 'text/html; charset=utf-8',
   '.js': 'application/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.mp3': 'audio/mpeg',
@@ -98,6 +99,18 @@ const MIME = {
 const VIDEO_EXT = EXT.video;
 const AUDIO_EXT = EXT.audio;
 const IMAGE_EXT = EXT.image;
+const PAGE_EXT = EXT.page;
+
+// Soort bestand op extensie, of null. Pagina's alleen onder assets/: de
+// pack zelf (index.html) is geen asset.
+function assetKind(rel) {
+  const ext = path.extname(rel).toLowerCase();
+  if (VIDEO_EXT.has(ext)) return 'video';
+  if (AUDIO_EXT.has(ext)) return 'audio';
+  if (IMAGE_EXT.has(ext)) return 'image';
+  if (PAGE_EXT.has(ext) && rel.startsWith('assets/')) return 'page';
+  return null;
+}
 
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -140,30 +153,24 @@ function sendJson(res, obj, code = 200) {
 }
 
 function listAssets() {
-  const video = [];
-  const audio = [];
-  const image = [];
+  const out = {video: [], audio: [], image: [], page: []};
 
   function walk(dir) {
     for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
+      if (entry.isDirectory() || (entry.isSymbolicLink() && fs.statSync(full).isDirectory())) {
         walk(full);
         continue;
       }
-      const ext = path.extname(entry.name).toLowerCase();
       const rel = path.relative(PACK_DIR, full).split(path.sep).join('/');
-      if (VIDEO_EXT.has(ext)) video.push(rel);
-      else if (AUDIO_EXT.has(ext)) audio.push(rel);
-      else if (IMAGE_EXT.has(ext)) image.push(rel);
+      const kind = assetKind(rel);
+      if (kind) out[kind].push(rel);
     }
   }
 
   if (fs.existsSync(PACK_DIR)) walk(PACK_DIR);
-  video.sort();
-  audio.sort();
-  image.sort();
-  return {video, audio, image};
+  Object.keys(out).forEach(k => out[k].sort());
+  return out;
 }
 
 function listAssetsDetailed() {
@@ -172,17 +179,13 @@ function listAssetsDetailed() {
   function walk(dir) {
     for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
+      if (entry.isDirectory() || (entry.isSymbolicLink() && fs.statSync(full).isDirectory())) {
         walk(full);
         continue;
       }
-      const ext = path.extname(entry.name).toLowerCase();
-      let kind = null;
-      if (VIDEO_EXT.has(ext)) kind = 'video';
-      else if (AUDIO_EXT.has(ext)) kind = 'audio';
-      else if (IMAGE_EXT.has(ext)) kind = 'image';
-      if (!kind) continue;
       const rel = path.relative(PACK_DIR, full).split(path.sep).join('/');
+      const kind = assetKind(rel);
+      if (!kind) continue;
       const stat = fs.statSync(full);
       out.push({path: rel, kind, size: stat.size, mtime: stat.mtimeMs});
     }
@@ -197,8 +200,9 @@ const UPLOAD_DIR = {
   video: path.join(PACK_DIR, 'assets'),
   audio: path.join(PACK_DIR, 'assets', 'audio'),
   image: path.join(PACK_DIR, 'assets', 'images'),
+  page: path.join(PACK_DIR, 'assets', 'pages'),
 };
-const UPLOAD_EXT = {video: VIDEO_EXT, audio: AUDIO_EXT, image: IMAGE_EXT};
+const UPLOAD_EXT = {video: VIDEO_EXT, audio: AUDIO_EXT, image: IMAGE_EXT, page: PAGE_EXT};
 
 // Same source file gets uploaded to more than one scene often (a shared
 // background clip, a shared photo) -- reuse the existing asset instead of
@@ -345,7 +349,7 @@ http
       const dir = UPLOAD_DIR[kind];
       const allowedExt = UPLOAD_EXT[kind];
       if (!dir) {
-        return sendJson(res, {ok: false, error: 'ongeldig kind (verwacht video, audio of image)'}, 400);
+        return sendJson(res, {ok: false, error: 'ongeldig kind (verwacht video, audio, image of page)'}, 400);
       }
 
       const filename = safeFilename(q.searchParams.get('name'));
@@ -384,6 +388,15 @@ http
 
       fs.mkdirSync(dir, {recursive: true});
 
+      // Een HTML-pagina pas je aan en upload je opnieuw: zelfde naam =
+      // vervangen, anders hangt de story nog aan de oude versie.
+      if (kind === 'page') {
+        const replaced = fs.existsSync(path.join(dir, filename));
+        fs.writeFileSync(path.join(dir, filename), buffer);
+        const rel = path.relative(PACK_DIR, path.join(dir, filename)).split(path.sep).join('/');
+        return sendJson(res, {ok: true, path: rel, replaced});
+      }
+
       const dup = findDuplicate(dir, buffer);
       if (dup) {
         const rel = path.relative(PACK_DIR, dup).split(path.sep).join('/');
@@ -409,8 +422,7 @@ http
       if (!full.startsWith(assetsRoot + path.sep)) {
         return sendJson(res, {ok: false, error: 'ongeldig pad'}, 400);
       }
-      const ext = path.extname(full).toLowerCase();
-      if (!VIDEO_EXT.has(ext) && !AUDIO_EXT.has(ext) && !IMAGE_EXT.has(ext)) {
+      if (!assetKind(path.relative(PACK_DIR, full).split(path.sep).join('/'))) {
         return sendJson(res, {ok: false, error: 'alleen media-bestanden kunnen hier verwijderd worden'}, 400);
       }
       if (!fs.existsSync(full)) {

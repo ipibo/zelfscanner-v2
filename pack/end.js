@@ -6,6 +6,8 @@
  * - Onderin een balk met tekst (manifest.end.barText, Enter = nieuwe regel)
  *   in manifest.end.barColor. Zelfde maten als de slider van het
  *   splash-scherm.
+ * - `fullImage: true`: geen balk, de afbeelding vult het hele scherm (als de
+ *   tekst al in het beeld staat).
  * - Blijft staan tot de reset-barcode of tot de scanner terug in de cradle
  *   gaat; beide brengen hem naar het splash-scherm (zie runtime.js). Andere
  *   scans en aanrakingen doen niets.
@@ -24,6 +26,8 @@ window.ZSEnd = (function () {
     '#zs-end{position:absolute;top:0;left:0;right:0;bottom:0;z-index:30;display:none;background:' + BG + ';',
     'touch-action:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;}',
     '#zs-end.zs-on{display:block;}',
+    '#zs-end.zs-full #zs-end-bg{height:100%;}',
+    '#zs-end.zs-full #zs-end-bar{display:none;}',
     '#zs-end-bg{position:absolute;top:0;left:0;width:100%;height:calc(100% - 21vw);object-fit:cover;display:none;}',
     // Tijdelijk beeld tot de visual van de vormgever er is.
     '#zs-end-title{position:absolute;top:0;left:0;right:0;bottom:21vw;display:flex;align-items:center;',
@@ -96,7 +100,7 @@ window.ZSEnd = (function () {
     }
     barEl.style.background = config.barColor || DEFAULT_COLOR;
     barEl.textContent = config.barText || DEFAULT_TEXT;
-    root.className = 'zs-on';
+    root.className = config.fullImage && config.image ? 'zs-on zs-full' : 'zs-on';
   }
 
   function hide() {
