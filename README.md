@@ -595,17 +595,19 @@ duidelijke foutmelding.
 
 ### Naar de scanners pushen
 
-Onderin de editor: **Push naar scanners** stuurt de huidige `pack/` (dus wat
-er laatst is opgeslagen) naar alle devices in `devices.txt`, via het
-bestaande [`zsdeploy`](zsdeploy) script (`zsdeploy push pack --parallel`).
+Onderin de editor: vink bij **push naar / story** de scanners aan (of
+**alles**/**geen**) en klik **Push naar …**. Dat stuurt de huidige `pack/`
+(dus wat er laatst is opgeslagen) alleen naar de aangevinkte devices, via
+het bestaande [`zsdeploy`](zsdeploy) script (`zsdeploy push pack --parallel
+--only mc1,ps1`). De vinkjes onthoudt de browser. Het pack is tientallen MB:
+reken op een paar minuten per push, de editor wacht maximaal 30 minuten.
 "Ververs devices" laat zien wat `adb` nu ziet. "herstart app na push" voegt
 `--restart` toe (force-stop + relaunch, zodat de nieuwe pack meteen
 zichtbaar wordt op het device).
 
 Vereist dat de devices al gekoppeld zijn (`./zsdeploy pair <naam>` één keer
-via USB, zie hierboven) en op hetzelfde WiFi zitten. De editor voert dit
-altijd tegen alle devices uit `devices.txt` uit — er is geen knop die maar
-naar één device pusht.
+via USB, zie hierboven) en op hetzelfde WiFi zitten. "herstart app na push"
+herstart alleen de aangevinkte devices.
 
 ### Andere story per device
 
