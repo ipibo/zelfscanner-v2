@@ -175,6 +175,10 @@
   // één keer, daarna door naar de volgende stop.
   function playVideo(src, asReward) {
     video.loop = !asReward;
+    // Android 5.1 WebView (MC18N0) kan na load() terugvallen op het
+    // muted-attribuut/defaultMuted -- beide expliciet zetten, anders speelt
+    // een beloning stil.
+    video.defaultMuted = !asReward;
     video.muted = !asReward;
     video.style.display = '';
     video.src = src;
@@ -183,6 +187,7 @@
     // this the element can silently keep showing the previous video.
     // Confirmed on-device 2026-08-19.
     video.load();
+    video.muted = !asReward;
     videoReward = asReward ? src : null;
     safePlay(video, 'video ' + src, function () {
       // Desktop-preview: autoplay met geluid mag daar pas na een klik. Dan
