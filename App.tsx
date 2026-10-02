@@ -18,14 +18,15 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import WebView from 'react-native-webview';
 import {Cradle} from './src/cradle';
 import {startAgent} from './src/agent';
 
-const UNLOCK_SECONDS = 10; // firmware-valid 10–30
+// firmware-valid 10–30. pack/runtime.js waits a bit longer than this
+// (UNDOCK_WAIT_MS) for the scanner to leave the cradle after a swipe.
+const UNLOCK_SECONDS = 10;
 
 // false = production/demo: pure content-pack flow, no HUD, no debug buttons.
 const SHOW_DEBUG_INFO = false;
@@ -47,6 +48,7 @@ function App(): React.JSX.Element {
   const [agentStatus, setAgentStatus] = useState('starting…');
   const [docked, setDocked] = useState<boolean | null>(null);
   const [unlockMsg, setUnlockMsg] = useState('—');
+  const dockedRef = useRef<boolean | null>(null);
 
   // Report to the dashboard + accept remote unlock commands.
   useEffect(() => {
@@ -63,18 +65,39 @@ function App(): React.JSX.Element {
     };
   }, []);
 
+  // Tell the pack whether the scanner sits in the cradle. Docking sends the
+  // pack back to its splash screen (same as the reset barcode); swiping that
+  // splash screen while docked makes the pack ask us to unlock the cradle.
+  // The native module can fire twice per insert (cradle intent + power), but
+  // the state doesn't change the second time, so this runs once.
+  const sendDock = useCallback((isDocked: boolean | null) => {
+    if (isDocked !== null) {
+      webviewRef.current?.injectJavaScript(
+        `window.onNativeDock && window.onNativeDock(${isDocked}); true;`,
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    dockedRef.current = docked;
+    sendDock(docked);
+  }, [docked, sendDock]);
+
+  // Requested by the pack when a visitor swipes the splash screen while
+  // docked -- that swipe replaced the old UNLOCK CRADLE button. Never opens
+  // the accessibility settings from here (that would drop a visitor into
+  // Android settings): on the PS20 enable that service once during setup.
   const unlockLocal = useCallback(() => {
     setUnlockMsg('unlocking…');
     Cradle.unlock(UNLOCK_SECONDS)
       .then(r => setUnlockMsg(`unlocked ${r.seconds}s (${r.method})`))
-      .catch(e => {
-        if (e?.code === 'E_A11Y_DISABLED') {
-          setUnlockMsg('enable accessibility →');
-          Cradle.openAccessibilitySettings();
-        } else {
-          setUnlockMsg('FAIL: ' + (e?.message ?? e));
-        }
-      });
+      .catch(e =>
+        setUnlockMsg(
+          e?.code === 'E_A11Y_DISABLED'
+            ? 'accessibility service off'
+            : 'FAIL: ' + (e?.message ?? e),
+        ),
+      );
   }, []);
 
   const focusInput = useCallback(() => {
@@ -90,12 +113,14 @@ function App(): React.JSX.Element {
       } catch {
         return;
       }
-      if (msg.type === 'sceneEnd') {
-        setPackStatus(`scene end: ${msg.payload?.id}`);
-      } else if (msg.type === 'storyStart') {
+      if (msg.type === 'storyStart') {
         setPackStatus(`story start: ${msg.payload?.id}`);
+      } else if (msg.type === 'found') {
+        setPackStatus(`found: ${msg.payload?.id}`);
+      } else if (msg.type === 'storyEnd') {
+        setPackStatus('story end');
       } else if (msg.type === 'reset') {
-        setPackStatus(`reset from: ${msg.payload?.from}`);
+        setPackStatus(`reset from: ${msg.payload?.from} (${msg.payload?.by})`);
       } else if (msg.type === 'puzzleSolved') {
         setPackStatus(`puzzle solved: ${msg.payload?.id}`);
       } else if (msg.type === 'wrongScan') {
@@ -169,7 +194,10 @@ function App(): React.JSX.Element {
         domStorageEnabled
         mediaPlaybackRequiresUserAction={false}
         onMessage={onWebMessage}
-        onLoadEnd={() => setPackStatus('loaded')}
+        onLoadEnd={() => {
+          setPackStatus('loaded');
+          sendDock(dockedRef.current);
+        }}
         onError={e => setPackStatus('error: ' + JSON.stringify(e?.nativeEvent))}
       />
 
@@ -206,13 +234,6 @@ function App(): React.JSX.Element {
           <Text style={styles.label}>UNLOCK</Text>
           <Text style={styles.typing}>{unlockMsg}</Text>
         </View>
-      )}
-
-      {/* Manual local unlock — only meaningful while docked, so hide it otherwise. */}
-      {docked === true && (
-        <TouchableOpacity style={styles.unlockBtn} onPress={unlockLocal}>
-          <Text style={styles.unlockBtnText}>UNLOCK CRADLE</Text>
-        </TouchableOpacity>
       )}
     </View>
   );
@@ -257,21 +278,6 @@ const styles = StyleSheet.create({
   typing: {
     color: '#ffd166',
     fontSize: 14,
-  },
-  unlockBtn: {
-    position: 'absolute',
-    bottom: 24,
-    alignSelf: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    backgroundColor: '#1e88e5',
-    borderRadius: 10,
-  },
-  unlockBtnText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: 1,
   },
 });
 

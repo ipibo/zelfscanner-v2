@@ -1,16 +1,19 @@
 /**
  * Overlay-melding -- donkere laag met witte tekst bovenop wat er al staat.
  *
- * Eerste gebruik: de luisterinstructie direct na het swipen (zie runtime.js).
- * Fadet in over het vorige beeld, blijft `seconds` staan, fadet uit. Terwijl
- * hij helemaal dekt (onShown) kan de runtime eronder van beeld wisselen.
+ * Gebruik: de luisterinstructie direct na het swipen, en opnieuw na elke
+ * juiste scan vóór een audiotour (zie runtime.js). Fadet in over het vorige
+ * beeld, blijft `seconds` staan, fadet uit. Terwijl hij helemaal dekt
+ * (onShown) of net begint te verdwijnen (onHide) kan de runtime eronder van
+ * beeld wisselen.
  *
  * De laag vangt alle aanrakingen af: niets eronder (slider, puzzel) reageert
  * zolang hij er staat. Scans gaan gewoon door, dat regelt runtime.js.
  *
  * ES5 / Chromium 46, zie puzzle.js. Maten in vw (geen viewport-meta).
  *
- * API: ZSOverlay.show(text, {seconds, hold, onShown, onDone}) / ZSOverlay.hide()
+ * API: ZSOverlay.show(text, {seconds, hold, onShown, onHide, onDone}) / ZSOverlay.hide()
+ *   onShown: fade-in klaar. onHide: fade-out begint. onDone: fade-out klaar.
  *   hold: blijft staan zonder timer (editor-preview); een tweede show() met
  *   hold ververst dan alleen de tekst.
  */
@@ -94,6 +97,9 @@ window.ZSOverlay = (function () {
     }
     later(function () {
       root.className = 'zs-on';
+      if (opts.onHide) {
+        opts.onHide();
+      }
       later(function () {
         root.className = '';
         if (opts.onDone) {

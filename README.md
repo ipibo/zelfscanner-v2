@@ -88,42 +88,104 @@ Zebra-builds. Een kandidaat op stock AOSP is `setprop persist.adb.tcp.port
 deze builds die property mag zetten is niet getest — probeer het zelf, ga er
 niet blind van uit dat het werkt.
 
-# Content-pack pipeline (audiotour)
+# Content-pack pipeline (story)
 
-Routes worden geschreven als plain-text bestand in `routes/`, niet direct als
-JSON. Formaat: blokken van `key: value` regels, elk blok begint met `scene:`.
+## Verloop
+
+Zo loopt een story, vastgelegd op 2026-09-17 met Sjefs storyboard:
+
+1. **Splash-scherm.** De bezoeker swipet om te starten.
+2. **Luisterinstructie.** Een melding staat een paar seconden over het beeld.
+3. **Intro-audio** (optioneel, `intro.src`). Speelt op het audiotour-scherm.
+   Pas als die klaar is begint de speurtocht.
+4. **Hint van stop 1.** Afbeelding, puzzel of video van het product dat
+   gescand moet worden.
+5. **Juiste scan → beloning.** Een audiotour (eerst weer de luisterinstructie)
+   of een video. Is die klaar, dan volgt de hint van de volgende stop.
+6. **Eindscherm.** Komt na de beloning van de laatste stop. Het blijft staan
+   tot de reset-barcode of tot de scanner terug in de cradle gaat.
+
+Een **stop** koppelt een product-barcode aan een hint en een beloning. De
+beloning hangt dus aan de barcode, niet aan de plek in de lijst. Daardoor kan
+de volgorde later per bezoeker geschud worden en hoort de audiotour van
+bijvoorbeeld de gebakken uitjes nog steeds bij de gebakken uitjes. Schudden is
+nog niet gebouwd: `resetOrder()` in `pack/runtime.js` is de plek.
+
+Scans:
+
+- **Tijdens een hint:** alleen de barcode van die stop gaat door. Andere
+  codes geven "verkeerd product".
+- **Tijdens de intro, een beloning, op het splash-scherm en op het eindscherm:** scans
+  doen niets.
+- **Altijd:** de reset-barcode en terugzetten in de cradle werken, zie
+  hieronder.
+
+## Manifest
+
+```json
+{
+  "version": "0.3.0",
+  "resetScan": "8712345679999",
+  "splash": {"image": "…", "sliderColor": "#ffff5c", "sliderText": "Swipe to start"},
+  "instruction": {"text": "Keep the scanner next to your ear", "seconds": 5},
+  "intro": {"src": "assets/audio/intro.mp3"},
+  "audiotour": {"image": "…"},
+  "stops": [
+    {
+      "id": "uitjes",
+      "scan": "8712345670012",
+      "hint": {"type": "puzzle", "src": "assets/images/uitjes.jpg"},
+      "reward": {"type": "audio", "src": "assets/audio/uitjes.mp3"}
+    }
+  ],
+  "end": {"image": "…", "barColor": "#ffff5c", "barText": "Please gather at the\nself-checkout"}
+}
+```
+
+- `hint.type` is `image`, `puzzle` of `video`.
+- `reward.type` is `audio` (audiotour) of `video`.
+- Een stop zonder hint-bestand toont zwart. Een stop zonder beloning gaat na
+  de scan meteen door naar de volgende stop.
+- Het oude formaat met losse `scenes` wordt geweigerd. De editor neemt
+  splash, instructie en reset-code wel over.
+
+De validatie staat op één plek, `tools/manifest-schema.js`, en wordt gebruikt
+door zowel `pack:build` als de story editor. Hij controleert:
+
+- barcodes: 8-14 cijfers, uniek per stop en niet gelijk aan de reset-code
+- of bestanden bestaan en van de juiste soort zijn
+- kleuren, de duur van de instructie en dubbele stop-namen
+
+## Routes als tekstbestand
+
+Een route kun je ook als plain-text bestand in `routes/` schrijven in plaats
+van in de editor. Bovenin staan de instellingen, daarna volgt per stop een
+blok dat begint met `stop:`:
 
 ```
-scene: intro
-audio: assets/audio/intro.mp3
-text: Welkom. Scan het eerste product.
-scan: 8712345678901
-next: scene_2
-```
-
-Keys: `scene` (id, verplicht), `video`, `image`, `puzzle`, `audio`, `text`
-(caption), `scan` (verwachte barcode, optioneel voor een eindscene), `next`
-(expliciete volgende scene-id).
-
-Bovenin de route, vóór de eerste `scene:` (net als `version`):
-
-```
-version: 0.2.0
+version: 0.3.0
 reset: 8712345679999
 splash: assets/images/start.jpg
 splashColor: #ffff5c
 splashText: Swipe to start
 instruction: Keep the scanner next to your ear
 instructionSeconds: 5
+intro: assets/audio/intro.mp3
+audiotour: assets/images/oor.jpg
+endImage: assets/images/the-end.png
+endColor: #ffff5c
+endText: Please gather at the\nself-checkout
+
+stop: uitjes
+scan: 8712345670012
+hint: puzzle assets/images/uitjes.jpg
+reward: audio assets/audio/uitjes.mp3
 ```
 
-`reset` is verplicht (zie splash-scherm hieronder), de `splash*`- en
-`instruction*`-keys niet.
-
-Een scene heeft één beelddrager: óf `video`, óf `image`, óf `puzzle`. Bij
-`image` en `puzzle` mag `audio`-narratie, bij `video` niet (die staat op
-zichzelf). `pack:build` en de story editor weigeren allebei een manifest dat
-dit schendt.
+- `reset` is verplicht, de andere instellingen niet.
+- `\n` in een tekst betekent een nieuwe regel.
+- `hint:` en `reward:` nemen eerst het type en daarna het bestand.
+- `scene:` bestaat niet meer.
 
 Bouwen naar `pack/manifest.json`:
 
@@ -131,119 +193,183 @@ Bouwen naar `pack/manifest.json`:
 npm run pack:build -- routes/<naam>.txt
 ```
 
-Valideert: barcode-vorm (8-14 cijfers), of audio/video bestanden echt bestaan
-in `pack/assets/`, dubbele scene-ids, en dangling `next`-references.
+Voorbeelden: `routes/audiotour-demo.txt` en `routes/puzzel-demo.txt`.
 
 ## Splash-scherm en reset-barcode (`pack/splash.js`)
 
-Elke story begint met een splash-scherm, altijd, vóór de eerste scene. Dat
-staat niet als scene in het manifest maar als vast onderdeel ervan:
-
-```json
-"resetScan": "8712345679999",
-"splash": {
-  "image": "assets/images/start.jpg",
-  "sliderColor": "#ffff5c",
-  "sliderText": "Swipe to start"
-}
-```
+Elke story begint met een splash-scherm, altijd, vóór de eerste stop. Het is
+geen stop maar een vast onderdeel van het manifest (`splash`, `resetScan`).
 
 - `image` vult het scherm boven de slider. Leeg = zwart.
-- Onderin een slider: wit blok met pijl, baan in `sliderColor` (leeg =
-  `#ffff5c`) met `sliderText` (leeg = "Swipe to start"). Blok voorbij 60%
-  naar rechts slepen start de story bij de eerste scene, minder veert terug.
-  Slepen mag overal op de slider beginnen.
+- Onderin staat een slider: een wit blok met een pijl op een baan in
+  `sliderColor` (leeg = `#ffff5c`), met `sliderText` (leeg = "Swipe to
+  start").
+  - Sleep je het blok voorbij 60% naar rechts, dan start de story. Minder ver
+    en het veert terug.
+  - Slepen mag overal op de slider beginnen.
 - Scans op het splash-scherm doen niets (geen "verkeerd product").
-- **`resetScan` werkt in elke scene**: puzzel, video, audio, ondertitel en
-  voortgang weg, terug naar het splash-scherm voor de volgende bezoeker.
-  Verplicht, en mag niet gelijk zijn aan een `expectScan` van een scene —
-  `pack:build` en de editor weigeren anders. Printen via **Barcodes (PDF)** in
-  de editor, daar staat hij als rode RESET-kaart vooraan.
-- Naar de native laag gaan `storyStart` (na de swipe) en `reset` (met de
-  scene waar vandaan), zichtbaar in de HUD.
-
-In de story editor staat **Splash** altijd bovenaan de scenelijst. Wijzigingen
-aan afbeelding, kleur, tekst en reset-code zie je meteen in de preview, nog
-voor je opslaat. Heeft een ouder manifest nog geen reset-code, dan stelt de
-editor er bij openen een voor.
+- **`resetScan` werkt altijd.** Puzzel, video, audio en voortgang zijn weg en
+  de scanner staat weer op het splash-scherm, klaar voor de volgende
+  bezoeker.
+  - Verplicht, en mag niet gelijk zijn aan de barcode van een stop.
+  - Printen via **Barcodes (PDF)** in de editor, daar staat hij als rode
+    RESET-kaart vooraan.
+- **Terug in de cradle doet hetzelfde.** `App.tsx` luistert naar het
+  dock-event van de native Cradle-module en geeft de stand door aan
+  `window.onNativeDock(true/false)` in het pack, ook bij het laden.
+  - Staat het pack al op het splash-scherm, dan gebeurt er niets.
+  - Een USB-kabel insteken telt ook als dock.
+- **De swipe opent de cradle.** Staat de scanner in de cradle, dan vraagt de
+  swipe `App.tsx` om hem te ontgrendelen (`unlockCradle`, 10 s). Dat
+  vervangt de oude knop UNLOCK CRADLE.
+  - De story start meteen.
+  - Zit de scanner er na 15 s nog in (`UNDOCK_WAIT_MS`), dan gaat het pack
+    terug naar splash. Anders staat de volgende bezoeker voor een dichte
+    cradle zonder swipe.
+  - Buiten de cradle start de swipe alleen de story.
+  - Op de PS20 loopt de unlock via de accessibility-service. Staat die uit,
+    dan gaat de cradle niet open en opent de app ook geen instellingen
+    (anders belandt een bezoeker daarin). Zet de service dus aan bij de
+    installatie.
+- Het cradle-deel zit in de app, niet in het pack: het werkt pas na een
+  nieuwe APK-build.
+- Naar de native laag gaan `storyStart` (na de swipe) en `reset` (met `from`
+  en `by`: `scan` of `cradle`). Beide zijn zichtbaar in de HUD.
 
 Maten en de 60%-grens staan bovenin `pack/splash.js` (`DONE_AT`, CSS in vw).
 
 ## Luisterinstructie (`pack/overlay.js`)
 
-Direct na het swipen verschijnt een melding als donkere laag over het beeld,
-met witte tekst in het midden:
+Een donkere laag met witte tekst in het midden. Hij verschijnt op twee
+momenten, met dezelfde tekst en duur:
 
 ```json
-"instruction": {
-  "text": "Keep the scanner next to your ear",
-  "seconds": 5
-}
+"instruction": {"text": "Keep the scanner next to your ear", "seconds": 5}
 ```
 
-Volgorde, zoals nu gebouwd (2026-09-17, volgorde wordt nog verfijnd):
-
-1. Swipe af: de laag fadet in over het splash-scherm.
-2. Zodra hij dekt wisselt het beeld eronder naar de eerste scene (het eerste
-   product).
-3. Na `seconds` fadet de laag weg en start pas de narratie van de eerste
-   scene. Een video in die scene speelt er al onder.
+1. **Na het swipen.** De laag fadet in over het splash-scherm. Met
+   intro-audio komt bij het wegfaden het audiotour-scherm eronder en start
+   de intro, zoals vóór een audiotour-beloning. Zonder intro wisselt het
+   beeld eronder naar de hint van stop 1, en na `seconds` fadet de laag weg.
+2. **Na elke juiste scan, vóór een audiotour.** De laag komt over de hint te
+   liggen. Als hij wegfadet, komt het audiotour-scherm eronder en daarna
+   start de audio. Vóór een video-beloning komt geen instructie.
 
 - `text` leeg = "Keep the scanner next to your ear". Een enter in de tekst
   is een nieuwe regel.
-- `seconds` leeg = 5, `0` = geen instructie, meteen de eerste scene. Max 60.
-- Scannen tijdens de melding werkt gewoon: juiste scan gaat door (melding
-  weg), reset gaat terug naar splash, "verkeerd product" ligt eroverheen.
+- `seconds` leeg = 5, max 60. Bij `0` verschijnt de instructie nooit.
+- Scannen tijdens de melding bij de start werkt gewoon als er geen intro is:
+  de juiste scan gaat door. Met intro doen scans niets tot de intro klaar is.
+  Reset gaat altijd terug naar splash.
 - Aanraken tijdens de melding doet niets.
 
-In de story editor staat **Luisterinstructie** vast onder Splash. Aanklikken
-houdt de melding in de preview in beeld zolang je de tekst aanpast. De echte
-timing zie je door op Splash te klikken en in de preview te swipen.
+## Intro-audio
+
+Een audiofragment na de splash, vóór de eerste hint:
+
+```json
+"intro": {"src": "assets/audio/intro.mp3"}
+```
+
+- Speelt op het audiotour-scherm (zelfde achtergrond en knoppen), na de
+  luisterinstructie.
+- Klaar, of het bestand laadt niet: door naar de hint van stop 1.
+- Scans doen niets tijdens de intro, reset en cradle wel.
+- Leeg of weg = geen intro, de story loopt zoals vóór 2026-10-01.
+- Alleen het pack verandert: geen nieuwe APK nodig.
+
+## Audiotour (`pack/audiotour.js`)
+
+De beloning `"reward": {"type": "audio", …}`. Storyboard: "3. Audiotour".
+
+- **Achtergrond:** beeldvullend, één voor alle audiotours
+  (`audiotour.image`). Die visual komt nog van de vormgever. Leeg = groen.
+- **Knoppen onderin:**
+  - 10 seconden terug
+  - pauze/play: het icoon volgt de audio
+  - verticale volumeschuif
+- **Voortgang:** een geel vlak schuift van links naar rechts, zoals de rode
+  balk onder een YouTube-video.
+  - Het kleurt het beeld eronder (`mix-blend-mode: hue`), dus het oor blijft
+    zichtbaar.
+  - Zonder blend-mode wordt het half doorzichtig geel.
+- **Volume:** de schuif regelt het volume van de audio zelf (0-1), niet het
+  systeemvolume. Zet dat op de scanners dus voluit.
+  - De stand blijft staan tussen stops.
+  - Na een reset staat het volume weer vol.
+- **Einde:** als de audio klaar is, volgt de volgende stop. Scans doen niets
+  zolang de audio loopt, alleen reset werkt.
+  - Een bestand dat niet laadt, slaat de runtime over, zodat de bezoeker
+    niet vastloopt.
+
+Maten staan als vw in de CSS bovenin het bestand, afgeleid van het storyboard
+(320 px breed).
+
+## Video als hint of beloning
+
+- **Als hint:** zonder geluid, in een lus, tot de juiste scan.
+- **Als beloning:** met geluid, één keer. Daarna volgt de volgende stop.
+- **Geluid bij uploads:** video-uploads via de editor houden hun geluid
+  (AAC). Oudere uploads zijn zonder geluid opgeslagen; upload die opnieuw als
+  ze als beloning geluid nodig hebben.
+- **Desktop-preview:** Chrome blokkeert daar soms autoplay met geluid. De
+  preview speelt de video dan stil af.
+
+## Eindscherm (`pack/end.js`)
+
+Komt na de beloning van de laatste stop. Storyboard: "the end".
+
+```json
+"end": {"image": "…", "barColor": "#ffff5c", "barText": "Please gather at the\nself-checkout"}
+```
+
+- `image` vult het scherm boven de balk. Leeg = een groen vlak met "the end"
+  als tijdelijk beeld, tot de visual er is.
+- De balk heeft dezelfde maten als de slider van het splash-scherm.
+  - `barText` leeg = "Please gather at the self-checkout". Enter = nieuwe
+    regel.
+  - `barColor` leeg = `#ffff5c`.
+- Blijft staan tot de reset-barcode of de cradle. Andere scans en aanrakingen
+  doen niets.
+- Stuurt `storyEnd` naar de native laag.
 
 ## Puzzel-minigame (`pack/puzzle.js`)
 
-Eerste module uit Sjefs storyboard. Een scene met `puzzle: <pad naar foto>`
-laat de foto niet zien maar als 3x3 puzzel:
-
-```
-scene: puzzel
-puzzle: assets/images/appelmoes.jpg
-audio: assets/audio/appelmoes.mp3
-text: Leg de puzzel, of scan het volgende product
-scan: 8712345670012
-```
+De hint `"hint": {"type": "puzzle", …}`. De foto verschijnt niet in één keer
+maar als 3x3 puzzel.
 
 Gedrag, zoals besloten op 2026-09-17:
 
-- Stukjes worden aangeboden in een balk onderin, in willekeurige volgorde,
-  vier tegelijk. Legt de bezoeker er een, dan schuift het volgende aan.
-- Een stukje klikt alleen vast op zijn eigen plek. Elders veert het terug naar
-  de balk, zonder foutmelding — er valt niets te verliezen.
-- **De puzzel is een hint, geen horde.** `expectScan` blijft gewoon werken, dus
-  doorscannen naar het volgende artikel kan altijd, ook halverwege. Elk goed
-  gelegd stukje maakt de hint een stukje duidelijker. Is hij af, dan valt het
-  raster weg, staat het beeld heel in het midden en blijft het staan tot de
-  volgende scan.
-- Bij solve gaat er een `puzzleSolved`-bericht naar de native laag (zichtbaar
-  in de HUD), verder doet die daar nog niets mee.
+- **Aanbod:** de stukjes komen in willekeurige volgorde, vier tegelijk, in
+  een balk onderin. Legt de bezoeker er een, dan schuift het volgende aan.
+- **Leggen:** een stukje klikt alleen vast op zijn eigen plek. Elders veert
+  het terug naar de balk, zonder foutmelding; er valt niets te verliezen.
+- **De puzzel is een hint, geen horde.** Doorscannen naar het product kan
+  altijd, ook halverwege.
+  - Elk goed gelegd stukje maakt de hint een stukje duidelijker.
+  - Is de puzzel af, dan verdwijnt het raster en blijft het hele beeld in het
+    midden staan tot de scan.
+- **Native:** bij een opgeloste puzzel gaat er een `puzzleSolved`-bericht
+  naar de native laag (zichtbaar in de HUD). Die doet er verder nog niets
+  mee.
 
-Aantal stukjes per balk en de rastergrootte staan als `SLOTS` en `GRID`
+Het aantal stukjes in de balk en de rastergrootte staan als `SLOTS` en `GRID`
 bovenin `pack/puzzle.js`.
 
-Uitproberen zonder content van Sjef: er staat een testafbeelding klaar in
-`pack/assets/images/puzzel-test.jpg` plus een demo-route in
-`routes/puzzel-demo.txt`. Of kies in de story editor bij een scene het type
-**Puzzel + audio**.
+Techniek:
 
-Techniek: geen HTML5 drag-and-drop (doet niets op touch in deze WebView) maar
-losse `touchstart`/`touchmove`/`touchend`-handlers, met muis-events erbij zodat
-de desktop-preview werkt. De stukjes zijn echte legpuzzelvormen (nopjes en
-gaatjes, per puzzel willekeurig) en worden op `<canvas>` uit één bestand
-geknipt, dus er hoeft niets voorgesneden te worden. Canvas omdat CSS
-`clip-path` met curves in Chromium 46 nog niet bestaat. De vorm van een nop
-staat als `KNOB_*` bovenin `pack/puzzle.js`. `puzzle.js` wordt door
-`pack/index.html` op dezelfde manier ingeladen als `runtime.js` (XHR + `eval`,
-zie de comment daar).
+- **Slepen:** geen HTML5 drag-and-drop, want dat doet niets op touch in deze
+  WebView. Daarom losse `touchstart`/`touchmove`/`touchend`-handlers, met
+  muis-events erbij zodat de desktop-preview werkt.
+- **Vormen:** de stukjes zijn echte legpuzzelvormen, met nopjes en gaatjes
+  die per puzzel willekeurig zijn.
+  - Ze worden op `<canvas>` uit één bestand geknipt, dus er hoeft niets
+    voorgesneden te worden.
+  - Canvas omdat CSS `clip-path` met curves in Chromium 46 nog niet bestaat.
+  - De vorm van een nop staat als `KNOB_*` bovenin `pack/puzzle.js`.
+- **Laden:** alle modules (`puzzle.js`, `splash.js`, `overlay.js`,
+  `audiotour.js`, `end.js`) worden door `pack/index.html` op dezelfde manier
+  ingeladen als `runtime.js`: XHR + `eval`, zie de comment daar.
 
 ## ES5-check
 
@@ -279,48 +405,84 @@ Zelfde server als hierboven (`npm run pack:preview`), andere pagina:
 http://localhost:8934/tools/editor.html
 ```
 
-Visuele editor voor `pack/manifest.json`: splash-scherm instellen (zie
-hierboven), scenes toevoegen/verwijderen/
-herordenen, per scene een type kiezen — Video (default voor een nieuwe
-scene), Afbeelding + audio, of Puzzel + audio (nooit twee tegelijk, zie
-hierboven) —
-tekst/verwachte-scan/volgende-scene instellen (dropdowns tonen exact wat er
-nu in `pack/assets/` staat), live preview + scan-simulator ernaast, en een
-"Opslaan"-knop die direct naar `pack/manifest.json` schrijft (met dezelfde
-validatie als `pack:build`).
+Een visuele editor voor `pack/manifest.json`. De lijst links volgt het
+verloop van de story:
 
-Scene aanklikken in de linkerlijst springt de live preview rechtstreeks naar
-die scene (via een `window.__gotoScene` hook in `pack/runtime.js`, alleen
-voor de editor — de native app gebruikt 'm nooit). Bij "verwachte scan"
-vult **genereer** een willekeurige unieke 13-cijferige code in.
+1. **Splash:** achtergrond, slider-kleur en -tekst, en de reset-barcode.
+2. **Luisterinstructie:** tekst en duur.
+3. **Audiotour-scherm:** de achtergrond voor alle audiotours.
+4. **Stops:** toevoegen, verwijderen en herordenen met ↑↓. Een stop die nog
+   iets mist, krijgt het label "onvolledig".
+5. **Eindscherm:** afbeelding, balk-kleur en balk-tekst.
 
-Bestand uploaden kan ook rechtstreeks vanuit het formulier ("Choose file"
-onder video/afbeelding/audio) — landt in `pack/assets/` (video),
-`pack/assets/images/` of `pack/assets/audio/`. Zelfde bestand nog een keer
-uploaden (bv. dezelfde clip voor twee scenes) hergebruikt het bestaande
-bestand op disk in plaats van een kopie te maken.
+Een nieuwe stop krijgt meteen een unieke barcode. Per stop stel je in:
 
-Video-uploads gaan (als `ffmpeg` in je PATH staat — `brew install ffmpeg`)
-automatisch door een normalisatie-stap: HEVC/H.265 → H.264 en
-rotatie-metadata gebakken in de pixels. Nodig omdat de MC18N0 (Android 5.1.1
-WebView) geen HEVC decodeert en de rotatie-vlag van telefoon-video's negeert
-— zonder dit staat een portrait-opname plat en gekanteld op het device, ook
-al ziet-ie er op je laptop prima uit. Geen `ffmpeg`? Dan wordt het bestand
-ongewijzigd geüpload (werkt mogelijk niet goed op het device).
+- **Naam.** Die staat ook op de barcode-kaart.
+- **Product-barcode.** **genereer** vult een willekeurige unieke 13-cijferige
+  code in.
+- **Hint:** Afbeelding, Puzzel of Video, plus het bestand.
+- **Beloning:** Audiotour of Video, plus het bestand.
 
-Let op: dit bewerkt `manifest.json` zelf, niet de `routes/*.txt`-bronnen.
-Als je later opnieuw `npm run pack:build -- routes/<naam>.txt` draait,
-overschrijft dat je editor-wijzigingen weer.
+Wissel je tussen Afbeelding en Puzzel, dan blijft het bestand staan. Andere
+wissels maken het bestandsveld leeg. De dropdowns tonen precies wat er nu in
+`pack/assets/` staat.
+
+**Live preview.** Rechts staat de preview met een scan-simulator.
+
+- Klik je een onderdeel aan, dan springt de preview ernaartoe, met wat er
+  nu in de editor staat, ook als het nog niet is opgeslagen.
+- Bij een stop wissel je met **toon** (hint) en **speel** (beloning, zonder
+  de instructie ervoor).
+- **In cradle** / **Uit cradle** zet de scanner in of uit de cradle, zoals
+  op het device. Erin gaat terug naar splash, en een swipe in de cradle gaat
+  na 15 s terug naar splash als je hem niet uithaalt.
+- Dit loopt via `window.__editorPreview` in `pack/runtime.js`. Die hook is
+  alleen voor de editor; de native app gebruikt hem nooit.
+
+**Opslaan** schrijft direct naar `pack/manifest.json`, met dezelfde
+validatie als `pack:build`.
+
+**Bestanden uploaden** kan rechtstreeks vanuit het formulier ("Choose
+file").
+
+- Uploads landen in `pack/assets/` (video), `pack/assets/images/` of
+  `pack/assets/audio/`.
+- Upload je hetzelfde bestand nog een keer, dan wordt het bestaande bestand
+  op disk hergebruikt in plaats van een kopie gemaakt.
+
+**Video-uploads** gaan automatisch door een normalisatie-stap, als `ffmpeg`
+in je PATH staat (`brew install ffmpeg`).
+
+- Wat er gebeurt:
+  - HEVC/H.265 wordt H.264.
+  - De rotatie-metadata wordt in de pixels gebakken.
+  - Geluid wordt AAC.
+- Waarom: de MC18N0 (Android 5.1.1 WebView) decodeert geen HEVC en negeert
+  de rotatie-vlag van telefoon-video's. Zonder deze stap staat een
+  portrait-opname plat en gekanteld op het device, ook al ziet hij er op je
+  laptop prima uit.
+- Geen `ffmpeg`? Dan wordt het bestand ongewijzigd geüpload en werkt het
+  mogelijk niet goed op het device.
+
+Let op: de editor bewerkt `manifest.json` zelf, niet de
+`routes/*.txt`-bronnen. Draai je later opnieuw
+`npm run pack:build -- routes/<naam>.txt`, dan overschrijft dat je
+editor-wijzigingen.
+
+Draait de preview-server al sinds vóór een update van `tools/`? Herstart hem
+dan. De server laadt de validatie maar één keer in.
 
 ### Bestandsbeheer
 
 **Bestanden** in de editor-topbar opent `tools/library.html`: overzicht van
 alles in `pack/assets/` (video/afbeelding/audio) met preview, bestandsgrootte
-en of het "gebruikt door" een scene is of "ongebruikt" staat. Verwijderen kan
-per bestand — bij een bestand dat nog in gebruik is, waarschuwt de
-bevestiging welke scene(s) het raakt (dat scherpt de scene daarna kapot tot
-je er in de editor een ander bestand aan koppelt — `pack:build`/editor-save
-vangt dat af met een duidelijke foutmelding).
+en waar het gebruikt wordt (splash, audiotour-scherm, eindscherm, of een
+stop als hint of beloning), of "ongebruikt". Verwijderen kan per bestand.
+
+Is een bestand nog in gebruik, dan noemt de bevestiging wat het raakt. Dat
+onderdeel is daarna kapot tot je er in de editor een ander bestand aan
+koppelt; `pack:build` en opslaan in de editor vangen dat af met een
+duidelijke foutmelding.
 
 ### Naar de scanners pushen
 
@@ -335,6 +497,31 @@ Vereist dat de devices al gekoppeld zijn (`./zsdeploy pair <naam>` één keer
 via USB, zie hierboven) en op hetzelfde WiFi zitten. De editor voert dit
 altijd tegen alle devices uit `devices.txt` uit — er is geen knop die maar
 naar één device pusht.
+
+### Andere story per device
+
+Niet elk device hoeft dezelfde story te draaien. `pack/manifest.json` is de
+story **standaard**; extra stories staan los in `stories/<naam>.json`. De media
+blijft gedeeld in `pack/assets/` en gaat naar elk device.
+
+- Linksboven in de editor kies je welke story je bewerkt. **+ nieuw** maakt een
+  kopie van de story die open staat; hij bestaat pas na **Opslaan**.
+  Barcodes (PDF) toont de barcodes van de open story.
+- Onder de pushbalk staat per device een dropdown: welke story dat device
+  krijgt. Dat wordt meteen in `devices.txt` gezet, als derde kolom:
+
+  ```
+  mc6 192.168.1.31 kids
+  mc7 192.168.1.5 kids
+  ```
+
+  Geen derde kolom = standaard. `zsdeploy pair` laat die kolom staan.
+- Bij een push zet `zsdeploy` voor zo'n device `stories/<naam>.json` als
+  `manifest.json` in de staging, en vergelijkt daartegen (byte-diff). Bestaat
+  de story niet, dan stopt de push vóórdat er een device wordt aangeraakt.
+  `./zsdeploy push --dry-run` laat per device de story zien.
+- Let op: `zsdeploy status` vergelijkt versies nog met de meerderheid; devices
+  met een andere story (en ander versienummer) staan daar als AFWIJKEND.
 
 # Troubleshooting
 

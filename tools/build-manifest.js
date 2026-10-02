@@ -1,38 +1,53 @@
 #!/usr/bin/env node
 /**
- * Route source (.txt, indented key:value blocks) -> pack/manifest.json.
+ * Route source (.txt, key:value blocks) -> pack/manifest.json.
  * Build-time only -- runs on the laptop with Node, never on the device.
  * Usage: node tools/build-manifest.js routes/<name>.txt [out/manifest.json]
+ *
+ * Formaat: zie README ("Content-pack pipeline"). Instellingen bovenin, daarna
+ * blokken die elk beginnen met "stop: <naam>".
  */
 const fs = require('fs');
 const path = require('path');
+const {HINT_TYPES, REWARD_TYPES, validateManifest} = require('./manifest-schema');
 
 const ROOT = path.resolve(__dirname, '..');
-const BARCODE_RE = /^\d{8,14}$/;
-const COLOR_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
-const MAX_INSTRUCTION_SECONDS = 60;
 
-// Splash-, instructie- en reset-instellingen staan bovenin de route, net als
-// "version".
+// key in de route (kleine letters) -> [sectie in het manifest, veld]
 const TOP_LEVEL = {
-  reset: 'resetScan',
-  splash: 'image',
-  splashcolor: 'sliderColor',
-  splashtext: 'sliderText',
-  instruction: 'text',
-  instructionseconds: 'seconds',
+  splash: ['splash', 'image'],
+  splashcolor: ['splash', 'sliderColor'],
+  splashtext: ['splash', 'sliderText'],
+  instruction: ['instruction', 'text'],
+  instructionseconds: ['instruction', 'seconds'],
+  intro: ['intro', 'src'],
+  audiotour: ['audiotour', 'image'],
+  endimage: ['end', 'image'],
+  endcolor: ['end', 'barColor'],
+  endtext: ['end', 'barText'],
 };
 
+// "\n" in een tekstwaarde = nieuwe regel.
+function unescape(value) {
+  return value.replace(/\\n/g, '\n');
+}
+
+// "hint: puzzle assets/images/x.jpg" -> {type: 'puzzle', src: '...'}
+function typed(key, value, types, lineNo) {
+  const m = value.match(/^(\S+)\s+(\S.*)$/);
+  if (!m || !Object.prototype.hasOwnProperty.call(types, m[1])) {
+    throw new Error(
+      `route:${lineNo}: verwacht "${key}: <${Object.keys(types).join('|')}> <bestand>", kreeg "${value}"`,
+    );
+  }
+  return {type: m[1], src: m[2]};
+}
+
 function parseRoute(src) {
-  const lines = src.split(/\r?\n/);
-  let version = '0.1.0';
-  let resetScan = null;
-  const splash = {};
-  const instruction = {};
-  const scenes = [];
+  const manifest = {version: '0.1.0', resetScan: null, splash: {}, instruction: {}, intro: {}, audiotour: {}, stops: [], end: {}};
   let current = null;
 
-  lines.forEach((rawLine, i) => {
+  src.split(/\r?\n/).forEach((rawLine, i) => {
     const lineNo = i + 1;
     const line = rawLine.trim();
     if (!line || line.startsWith('#')) {
@@ -45,140 +60,43 @@ function parseRoute(src) {
     const key = m[1].toLowerCase();
     const value = m[2].trim();
 
-    if (key === 'version' || TOP_LEVEL[key]) {
+    if (key === 'version' || key === 'reset' || TOP_LEVEL[key]) {
       if (current) {
-        throw new Error(`route:${lineNo}: "${key}" moet vóór de eerste scene staan`);
+        throw new Error(`route:${lineNo}: "${m[1]}" moet vóór de eerste stop staan`);
       }
-      if (key === 'version') version = value;
-      else if (key === 'reset') resetScan = value;
-      else if (key === 'instruction') instruction.text = value;
-      else if (key === 'instructionseconds') instruction.seconds = Number(value);
-      else splash[TOP_LEVEL[key]] = value;
+      if (key === 'version') {
+        manifest.version = value;
+      } else if (key === 'reset') {
+        manifest.resetScan = value;
+      } else {
+        const [sectionKey, field] = TOP_LEVEL[key];
+        manifest[sectionKey][field] = field === 'seconds' ? Number(value) : unescape(value);
+      }
       return;
     }
     if (key === 'scene') {
-      current = {id: value, _line: lineNo};
-      scenes.push(current);
+      throw new Error(`route:${lineNo}: "scene:" bestaat niet meer, gebruik "stop:" (zie README)`);
+    }
+    if (key === 'stop') {
+      current = {id: value};
+      manifest.stops.push(current);
       return;
     }
     if (!current) {
-      throw new Error(`route:${lineNo}: "${key}" buiten een scene-blok (mist "scene:" ervoor?)`);
+      throw new Error(`route:${lineNo}: "${m[1]}" buiten een stop-blok (mist "stop:" ervoor?)`);
     }
-    if (
-      key === 'audio' ||
-      key === 'video' ||
-      key === 'image' ||
-      key === 'puzzle' ||
-      key === 'text' ||
-      key === 'next'
-    ) {
-      current[key] = value;
-    } else if (key === 'scan') {
-      current.expectScan = value;
+    if (key === 'scan') {
+      current.scan = value;
+    } else if (key === 'hint') {
+      current.hint = typed('hint', value, HINT_TYPES, lineNo);
+    } else if (key === 'reward') {
+      current.reward = typed('reward', value, REWARD_TYPES, lineNo);
     } else {
-      throw new Error(`route:${lineNo}: onbekende key "${key}"`);
+      throw new Error(`route:${lineNo}: onbekende key "${m[1]}"`);
     }
   });
 
-  return {version: version, resetScan: resetScan, splash: splash, instruction: instruction, scenes: scenes};
-}
-
-function validate(route, assetsBaseDir) {
-  const errors = [];
-  const ids = new Set();
-
-  // Zonder reset-barcode kan een scanner na de laatste scene nooit meer terug
-  // naar het splash-scherm, dus verplicht.
-  if (!route.resetScan) {
-    errors.push('"reset: <barcode>" ontbreekt bovenin de route (terug naar het splash-scherm)');
-  } else if (!BARCODE_RE.test(route.resetScan)) {
-    errors.push(`reset "${route.resetScan}" ziet er niet uit als een barcode (8-14 cijfers)`);
-  } else {
-    route.scenes.forEach(scene => {
-      if (scene.expectScan === route.resetScan) {
-        errors.push(`reset "${route.resetScan}" is ook de scan van scene "${scene.id}" — kies een andere`);
-      }
-    });
-  }
-  if (route.splash.sliderColor && !COLOR_RE.test(route.splash.sliderColor)) {
-    errors.push(`splashColor "${route.splash.sliderColor}" is geen hex-kleur (bv. #ffff5c)`);
-  }
-  if (route.splash.image && !fs.existsSync(path.join(assetsBaseDir, route.splash.image))) {
-    errors.push(`splash bestand niet gevonden: ${route.splash.image}`);
-  }
-  const secs = route.instruction.seconds;
-  if (secs !== undefined && !(secs >= 0 && secs <= MAX_INSTRUCTION_SECONDS)) {
-    errors.push(`instructionSeconds moet een getal van 0 t/m ${MAX_INSTRUCTION_SECONDS} zijn (0 = geen instructie)`);
-  }
-
-  route.scenes.forEach(scene => {
-    if (!scene.id) {
-      errors.push(`scene zonder id (regel ${scene._line})`);
-      return;
-    }
-    if (ids.has(scene.id)) {
-      errors.push(`dubbele scene id: "${scene.id}" (regel ${scene._line})`);
-    }
-    ids.add(scene.id);
-
-    if (scene.expectScan && !BARCODE_RE.test(scene.expectScan)) {
-      errors.push(`scene "${scene.id}": scan "${scene.expectScan}" ziet er niet uit als een barcode (8-14 cijfers)`);
-    }
-
-    // Een scene is óf een video, óf een foto met audio-narratie, óf een
-    // puzzel met audio-narratie -- nooit twee beelddragers tegelijk.
-    const visuals = ['video', 'image', 'puzzle'].filter(f => scene[f]);
-    if (visuals.length > 1) {
-      errors.push(`scene "${scene.id}": ${visuals.join(' en ')} kunnen niet allebei tegelijk (kies één)`);
-    }
-    if (scene.video && scene.audio) {
-      errors.push(`scene "${scene.id}": video en audio kunnen niet allebei tegelijk (video staat op zichzelf, narratie hoort bij image of puzzle)`);
-    }
-
-    ['audio', 'video', 'image', 'puzzle'].forEach(field => {
-      if (scene[field]) {
-        const full = path.join(assetsBaseDir, scene[field]);
-        if (!fs.existsSync(full)) {
-          errors.push(`scene "${scene.id}": ${field} bestand niet gevonden: ${scene[field]} (verwacht op ${full})`);
-        }
-      }
-    });
-  });
-
-  route.scenes.forEach(scene => {
-    if (scene.next && !ids.has(scene.next)) {
-      errors.push(`scene "${scene.id}": next "${scene.next}" verwijst naar een scene die niet bestaat`);
-    }
-  });
-
-  return errors;
-}
-
-function toManifest(route) {
-  const splash = {};
-  ['image', 'sliderColor', 'sliderText'].forEach(field => {
-    if (route.splash[field]) splash[field] = route.splash[field];
-  });
-  const instruction = {};
-  if (route.instruction.text) instruction.text = route.instruction.text;
-  if (route.instruction.seconds !== undefined) instruction.seconds = route.instruction.seconds;
-  return {
-    version: route.version,
-    resetScan: route.resetScan,
-    splash: splash,
-    instruction: instruction,
-    scenes: route.scenes.map(scene => {
-      const out = {id: scene.id};
-      if (scene.audio) out.audio = scene.audio;
-      if (scene.video) out.video = scene.video;
-      if (scene.image) out.image = scene.image;
-      if (scene.puzzle) out.puzzle = scene.puzzle;
-      if (scene.text) out.text = scene.text;
-      out.expectScan = scene.expectScan || null;
-      if (scene.next) out.next = scene.next;
-      return out;
-    }),
-  };
+  return manifest;
 }
 
 function main() {
@@ -190,26 +108,25 @@ function main() {
 
   const routePath = path.resolve(ROOT, routeArg);
   const outPath = path.resolve(ROOT, outArg || 'pack/manifest.json');
-  const assetsBaseDir = path.dirname(outPath); // paths in the route are relative to the pack dir, same as in manifest.json
+  const packDir = path.dirname(outPath); // paths in the route are relative to the pack dir, same as in manifest.json
 
-  const src = fs.readFileSync(routePath, 'utf8');
-  const route = parseRoute(src);
-
-  if (route.scenes.length === 0) {
-    console.error('geen scenes gevonden in route bestand');
+  let manifest;
+  try {
+    manifest = parseRoute(fs.readFileSync(routePath, 'utf8'));
+  } catch (e) {
+    console.error(e.message);
     process.exit(1);
   }
 
-  const errors = validate(route, assetsBaseDir);
+  const errors = validateManifest(manifest, packDir);
   if (errors.length > 0) {
     console.error(`${errors.length} fout(en) in ${routeArg}:\n`);
     errors.forEach(e => console.error('  - ' + e));
     process.exit(1);
   }
 
-  const manifest = toManifest(route);
   fs.writeFileSync(outPath, JSON.stringify(manifest, null, 2) + '\n');
-  console.log(`${outPath} geschreven — ${manifest.scenes.length} scenes, versie ${manifest.version}`);
+  console.log(`${outPath} geschreven — ${manifest.stops.length} stops, versie ${manifest.version}`);
 }
 
 main();

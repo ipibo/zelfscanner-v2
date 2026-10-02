@@ -1,0 +1,48 @@
+{
+  "version": "0.3.0",
+  "resetScan": "8712345679999",
+  "splash": {
+    "sliderColor": "#ffff5c",
+    "sliderText": "Swipe to start",
+    "image": "assets/images/Screenshot_2026-09-17_at_15.37.48.png"
+  },
+  "instruction": {
+    "text": "Keep the scanner next to your ear",
+    "seconds": 5
+  },
+  "intro": {
+    "src": "assets/audio/1._start-esv2-50p-bg-10p-music-m.mp3"
+  },
+  "audiotour": {
+    "image": "assets/images/oor_groen_ps480.jpg"
+  },
+  "stops": [
+    {
+      "id": "PMC1",
+      "scan": "8710400186601",
+      "hint": {
+        "type": "image",
+        "src": "assets/images/hint-Koriander.jpg"
+      },
+      "reward": {
+        "type": "video",
+        "src": "assets/video-PMC1.mp4"
+      }
+    },
+    {
+      "id": "stop2",
+      "scan": "3019889588264",
+      "hint": {
+        "type": "image",
+        "src": "assets/images/hint-Danerolles.jpg"
+      },
+      "reward": {
+        "type": "audio"
+      }
+    }
+  ],
+  "end": {
+    "barColor": "#ffff5c",
+    "barText": "Please gather at the\nself-checkout"
+  }
+}
