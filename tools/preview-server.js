@@ -49,7 +49,15 @@ function listStories() {
   return [DEFAULT_STORY].concat(extra);
 }
 
-// devices.txt: "naam ip [story]", '#' = comment.
+// Kolommen na naam en ip: een story en/of sn=<serienummer> (zsdeploy herkent
+// devices daarop, zie zsdeploy load_devices_file).
+function parseDeviceCols(cols) {
+  const sn = (cols.slice(2).find(c => c.startsWith('sn=')) || '').slice(3);
+  const story = cols.slice(2).find(c => !c.startsWith('sn=')) || DEFAULT_STORY;
+  return {name: cols[0], ip: cols[1], story, sn};
+}
+
+// devices.txt: "naam ip [story] [sn=serienummer]", '#' = comment.
 function readDevices() {
   let src = '';
   try {
@@ -63,10 +71,11 @@ function readDevices() {
     .filter(l => l && !l.startsWith('#'))
     .map(l => l.split(/\s+/))
     .filter(cols => cols.length >= 2)
-    .map(cols => ({name: cols[0], ip: cols[1], story: cols[2] || DEFAULT_STORY}));
+    .map(parseDeviceCols);
 }
 
-// Herschrijft alleen de regel van dit device; comments en volgorde blijven.
+// Herschrijft alleen de regel van dit device; comments, volgorde en het
+// serienummer blijven.
 function setDeviceStory(deviceName, story) {
   const src = fs.readFileSync(DEVICES_FILE, 'utf8');
   let found = false;
@@ -76,7 +85,10 @@ function setDeviceStory(deviceName, story) {
     const cols = trimmed.split(/\s+/);
     if (cols[0] !== deviceName || cols.length < 2) return line;
     found = true;
-    return story === DEFAULT_STORY ? `${cols[0]} ${cols[1]}` : `${cols[0]} ${cols[1]} ${story}`;
+    const {sn} = parseDeviceCols(cols);
+    return [cols[0], cols[1], story === DEFAULT_STORY ? null : story, sn ? 'sn=' + sn : null]
+      .filter(Boolean)
+      .join(' ');
   });
   if (!found) return false;
   fs.writeFileSync(DEVICES_FILE, out.join('\n'));

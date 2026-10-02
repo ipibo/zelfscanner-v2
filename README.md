@@ -77,6 +77,28 @@ draait. Bash + adb, geen server/MDM/StageNow.
 ./zsdeploy status          # welke versie draait waar — vlagt afwijkingen
 ```
 
+### Devices herkennen op serienummer
+
+`devices.txt` heeft per regel `naam ip [story] [sn=serienummer]`:
+
+```
+mc1 192.168.1.10 speurtocht sn=17321523020091
+ps1 192.168.1.6 sn=22096521400402
+```
+
+- zsdeploy herkent een device eerst aan zijn serienummer (`getprop
+  ro.serialno`), pas daarna aan zijn IP. IP's verschuiven via DHCP, het
+  serienummer niet, dus de story blijft bij het juiste device.
+- Krijgt een bekend device een nieuw IP, dan zet `push`, `status` en
+  `devices` dat zelf in `devices.txt`, zodat `connect` blijft werken.
+- `./zsdeploy adopt` geeft live devices zonder naam een naam en
+  serienummer. Oude regels zonder serienummer waarvan het IP niet meer
+  bestaat, worden eerst hergebruikt (mc voor MC18N0, ps voor PS20J). Welke
+  scanner welke oude naam krijgt is dan willekeurig, maar daarna vast.
+- `pair` schrijft het serienummer meteen mee.
+- Hangt een device aan USB én wifi, dan pusht zsdeploy er één keer naartoe,
+  via wifi. Twee pushes tegelijk naar één device maken het pack kapot.
+
 Zie `./zsdeploy -h` voor alle subcommando's en opties (`--model`, `--parallel`,
 `--dry-run`, `--restart`).
 
@@ -598,11 +620,12 @@ blijft gedeeld in `pack/assets/` en gaat naar elk device.
   krijgt. Dat wordt meteen in `devices.txt` gezet, als derde kolom:
 
   ```
-  mc6 192.168.1.31 kids
-  mc7 192.168.1.5 kids
+  mc6 192.168.1.31 kids sn=19040523020287
+  mc7 192.168.1.5 kids sn=18157523020523
   ```
 
-  Geen derde kolom = standaard. `zsdeploy pair` laat die kolom staan.
+  Geen story = standaard. `zsdeploy pair` en de editor laten story en
+  serienummer staan.
 - Bij een push zet `zsdeploy` voor zo'n device `stories/<naam>.json` als
   `manifest.json` in de staging, en vergelijkt daartegen (byte-diff). Bestaat
   de story niet, dan stopt de push vóórdat er een device wordt aangeraakt.
