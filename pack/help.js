@@ -10,7 +10,9 @@
  *   die stop `help` heeft. Bij de volgende stop is hij weer weg.
  * - × sluit de kaart, de knop blijft staan.
  * - `image` wordt licht vervaagd getoond (het is een hint, geen antwoord).
- *   Leeg = alleen tekst.
+ *   Leeg = alleen tekst. Vervagen via een canvas (klein tekenen, weer
+ *   opschalen): CSS `filter:blur` op een img in de scrollende kaart tekent
+ *   in de WebView van de MC18N0 (Chromium 46) een wit vlak.
  *
  * Scans werken gewoon door terwijl de kaart open is (runtime.js).
  *
@@ -22,6 +24,8 @@ window.ZSHelp = (function () {
   var CSS_ID = 'zs-help-style';
   var DEFAULT_BUTTON_TEXT = 'I need a hint';
   var BLUE = '#199ed9';
+  // foto wordt op 1/BLUR_FACTOR getekend en weer opgeschaald = vervaagd
+  var BLUR_FACTOR = 14;
 
   var CSS = [
     '#zs-help-btn{position:absolute;left:50%;bottom:5vw;z-index:35;display:none;',
@@ -39,8 +43,7 @@ window.ZSHelp = (function () {
     'display:flex;flex-direction:column;}',
     '#zs-help-content{overflow-y:auto;overflow-x:hidden;min-height:0;padding:12vw 6vw 9vw;box-sizing:border-box;',
     'display:flex;flex-direction:column;}',
-    '#zs-help-img{display:block;max-width:100%;max-height:60vh;margin:0 auto;-webkit-flex-shrink:0;flex-shrink:0;',
-    '-webkit-filter:blur(1.5vw);filter:blur(1.5vw);}',
+    '#zs-help-img{display:block;max-width:100%;max-height:60vh;margin:0 auto;-webkit-flex-shrink:0;flex-shrink:0;}',
     '#zs-help-sep{height:1px;background:#ccc;margin:6vw 3vw;-webkit-flex-shrink:0;flex-shrink:0;}',
     '#zs-help-text{color:' + BLUE + ';font:700 6.2vw/1.15 Arial,sans-serif;padding:0 3vw;white-space:pre-line;}',
     '#zs-help-close{position:absolute;top:-5vw;left:-5vw;width:12vw;height:12vw;border-radius:50%;border:0;',
@@ -50,6 +53,7 @@ window.ZSHelp = (function () {
   var btn = null;
   var modal = null;
   var imgEl = null;
+  var loader = null;
   var sepEl = null;
   var textEl = null;
   var current = null;
@@ -104,7 +108,7 @@ window.ZSHelp = (function () {
       '<div id="zs-help-card">' +
       '<button id="zs-help-close" type="button">×</button>' +
       '<div id="zs-help-content">' +
-      '<img id="zs-help-img" alt="">' +
+      '<canvas id="zs-help-img"></canvas>' +
       '<div id="zs-help-sep"></div>' +
       '<div id="zs-help-text"></div>' +
       '</div></div>';
@@ -113,6 +117,40 @@ window.ZSHelp = (function () {
     sepEl = document.getElementById('zs-help-sep');
     textEl = document.getElementById('zs-help-text');
     onTap(document.getElementById('zs-help-close'), close);
+  }
+
+  // Vervaagde versie van de foto op het canvas. Twee stappen omhoog
+  // (piepklein -> half -> vol) geeft een zachte waas in plaats van blokjes.
+  function drawBlurred(img) {
+    var w = img.naturalWidth;
+    var h = img.naturalHeight;
+    var sw = Math.max(1, Math.round(w / BLUR_FACTOR));
+    var sh = Math.max(1, Math.round(h / BLUR_FACTOR));
+    var small = document.createElement('canvas');
+    small.width = sw;
+    small.height = sh;
+    small.getContext('2d').drawImage(img, 0, 0, sw, sh);
+    var mid = document.createElement('canvas');
+    mid.width = sw * 4;
+    mid.height = sh * 4;
+    mid.getContext('2d').drawImage(small, 0, 0, mid.width, mid.height);
+    imgEl.width = w;
+    imgEl.height = h;
+    imgEl.getContext('2d').drawImage(mid, 0, 0, w, h);
+  }
+
+  function showImage(src) {
+    imgEl.style.display = 'none';
+    loader = new Image();
+    var mine = loader;
+    loader.onload = function () {
+      if (mine !== loader) {
+        return;
+      }
+      drawBlurred(mine);
+      imgEl.style.display = 'block';
+    };
+    loader.src = src;
   }
 
   function hasHelp(help) {
@@ -140,10 +178,9 @@ window.ZSHelp = (function () {
       return;
     }
     if (current.image) {
-      imgEl.src = current.image;
-      imgEl.style.display = 'block';
+      showImage(current.image);
     } else {
-      imgEl.removeAttribute('src');
+      loader = null;
       imgEl.style.display = 'none';
     }
     textEl.textContent = current.text || '';

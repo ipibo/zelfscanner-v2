@@ -16,6 +16,7 @@
  *
  * Maten in vw/% (geen viewport-meta), afgeleid van de speurtocht op een
  * 320 css-px breed scherm: ballon links, onderkant op 47% van de hoogte.
+ * Past de tekst niet, dan wordt de letter kleiner (fitBalloon).
  *
  * ES5 / Chromium 46, zie puzzle.js.
  *
@@ -26,6 +27,8 @@ window.ZSNarrator = (function () {
   var CSS_ID = 'zs-narrator-style';
   var BALLOON_DELAY_MS = 900;
   var DEFAULT_ANIMATION = 'slide';
+  var BALLOON_FONT_VW = 5;
+  var BALLOON_MIN_FONT_VW = 3.4;
 
   var CSS = [
     '#zs-narrator{position:absolute;top:0;left:0;right:0;bottom:0;z-index:5;display:none;overflow:hidden;',
@@ -103,9 +106,23 @@ window.ZSNarrator = (function () {
     }
   }
 
+  // De ballon groeit vanaf 47% omhoog; lange tekst (foutmelding + raadsel)
+  // liep boven het scherm uit. Letter kleiner tot de bovenkant binnen
+  // beeld valt. offsetTop negeert de pop-transform, dus dit kan meteen.
+  function fitBalloon() {
+    var margin = window.innerWidth * 0.03;
+    var size = BALLOON_FONT_VW;
+    balloonEl.style.fontSize = '';
+    while (balloonEl.offsetTop < margin && size > BALLOON_MIN_FONT_VW) {
+      size -= 0.2;
+      balloonEl.style.fontSize = size + 'vw';
+    }
+  }
+
   function setBalloon(text, isError) {
     balloonEl.textContent = text;
     balloonEl.className = 'zs-show' + (isError ? ' zs-error' : '');
+    fitBalloon();
   }
 
   function mount(hint, onLog) {
